@@ -44,6 +44,8 @@ export function defaultSettings(): Settings {
       useCardPostHistory: true,
       wiScanDepth: 2,
       wiBudgetPercent: 25,
+      autoSummary: true,
+      recapLength: 1500,
       wiRecursive: true,
       wiMaxRecursion: 3,
       wiIncludeNames: true,

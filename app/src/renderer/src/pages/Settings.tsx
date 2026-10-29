@@ -17,6 +17,7 @@ import { renderRich } from '../render/rich'
 import { THEMES } from '../theme/parchment'
 import { openExportArchive, pickImportArchive } from './ArchiveModals'
 import { PresetPanel } from './PresetPanel'
+import { HelpSection } from './Help'
 
 const TABS: { key: string; label: string; deco: string; icon: IconName }[] = [
   { key: 'api', label: '接口', deco: 'Fons', icon: 'sparkle' },
@@ -25,6 +26,7 @@ const TABS: { key: string; label: string; deco: string; icon: IconName }[] = [
   { key: 'sound', label: '声音', deco: 'Sonus', icon: 'music' },
   { key: 'opening', label: '开场动画', deco: 'Prologus', icon: 'flask' },
   { key: 'data', label: '数据', deco: 'Archivum', icon: 'folder' },
+  { key: 'help', label: '帮助', deco: 'Enchiridion', icon: 'scroll' },
   { key: 'about', label: '关于', deco: 'De Libro', icon: 'info' }
 ]
 
@@ -38,20 +40,25 @@ export function SettingsPage({ tab }: { tab?: string }) {
         <div className="set-toc-title t-display">设置</div>
         {TABS.map((x, i) => (
           <button key={x.key} className={`set-toc-item ${cur === x.key ? 'on' : ''}`} data-sfx="soft" onClick={() => setCur(x.key)}>
-            <span className="set-toc-no t-pixel">{['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'][i]}</span>
+            <span className="set-toc-no t-pixel">{['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'][i]}</span>
             <span>{x.label}</span>
           </button>
         ))}
       </nav>
       <section className="set-body" key={cur}>
-        <div className="t-deco">{t.deco}</div>
-        <h1 className="set-title t-display">{t.label}</h1>
+        {cur !== 'help' && (
+          <>
+            <div className="t-deco">{t.deco}</div>
+            <h1 className="set-title t-display">{t.label}</h1>
+          </>
+        )}
         {cur === 'api' && <ApiSection />}
         {cur === 'chat' && <ChatSection />}
         {cur === 'look' && <LookSection />}
         {cur === 'sound' && <SoundSection />}
         {cur === 'opening' && <OpeningSection />}
         {cur === 'data' && <DataSection />}
+        {cur === 'help' && <HelpSection />}
         {cur === 'about' && <AboutSection />}
       </section>
     </div>
@@ -75,7 +82,7 @@ function Row({ label, hint, children, wide }: { label: ReactNode; hint?: ReactNo
 const PROVIDERS: { value: ProviderKind; label: string; hint: string }[] = [
   { value: 'openai', label: 'OpenAI 兼容格式', hint: '已实测（DeepSeek）· 绝大多数服务都兼容' },
   { value: 'anthropic', label: 'Claude（Anthropic）', hint: '已实现，尚未实测' },
-  { value: 'gemini', label: 'Gemini（Google）', hint: '已实现，尚未实测' }
+  { value: 'gemini', label: 'Gemini（Google）', hint: '已实测（gemini-2.5-flash 免费层级）· 地址可以不填' }
 ]
 const THINKING: { value: ThinkingMode; label: string; hint?: string }[] = [
   { value: 'default', label: '模型默认' },
@@ -86,8 +93,28 @@ const THINKING: { value: ThinkingMode; label: string; hint?: string }[] = [
 ]
 const BASE_HINT: Record<ProviderKind, string> = {
   openai: '例如 https://api.deepseek.com 或 https://api.openai.com/v1',
-  anthropic: '默认 https://api.anthropic.com',
-  gemini: '默认 https://generativelanguage.googleapis.com'
+  anthropic: '可以不填，默认 https://api.anthropic.com',
+  gemini: '可以不填，默认 https://generativelanguage.googleapis.com'
+}
+
+/** 上下文预算的说明：超出时怎么办、模型上限、按实际用量的校准 */
+function ContextHint({ p, limit, onUse }: { p: ApiProfile; limit?: number; onUse: (v: number) => void }) {
+  return (
+    <>
+      发送内容的上限（token）。超出时先省略最早的聊天记录；预设、角色、世界书这些固定内容本身放不下时不会发送，并提示是哪几段太大。
+      {limit ? (
+        <>
+          {' '}这个模型的上限是 {limit.toLocaleString()}。
+          {p.contextSize !== limit && (
+            <button className="link-btn" data-sfx="soft" onClick={() => onUse(limit)}>
+              设为上限
+            </button>
+          )}
+        </>
+      ) : null}
+      {p.tokenRatio ? ` 已按实际用量校准估算（×${p.tokenRatio.toFixed(2)}）。` : ''}
+    </>
+  )
 }
 
 function ApiSection() {
@@ -96,7 +123,7 @@ function ApiSection() {
   const p = s.api.profiles.find((x) => x.id === s.api.activeProfileId) ?? s.api.profiles[0]
   const [keyInput, setKeyInput] = useState('')
   const [hint, setHint] = useState<string | null>(null)
-  const [models, setModels] = useState<string[] | null>(null)
+  const [models, setModels] = useState<{ id: string; context?: number }[] | null>(null)
   const [loadingModels, setLoadingModels] = useState(false)
   const [test, setTest] = useState<{ state: 'idle' | 'run' | 'ok' | 'err'; text?: string }>({ state: 'idle' })
   const [adv, setAdv] = useState(false)
@@ -122,7 +149,12 @@ function ApiSection() {
     audio.confirm()
     toast('ok', keyInput.trim() ? '密钥已加密保存' : '密钥已清除')
   }
+  /** 输入框里还有没保存的密钥：先保存（离开输入框、测试连接、获取模型列表时） */
+  const saveTypedKey = async () => {
+    if (keyInput.trim()) await saveKey()
+  }
   const fetchModels = async () => {
+    await saveTypedKey()
     setLoadingModels(true)
     try {
       const list = await yt.llm.models(p)
@@ -135,6 +167,7 @@ function ApiSection() {
     }
   }
   const runTest = async () => {
+    await saveTypedKey()
     setTest({ state: 'run' })
     const r = await yt.llm.test(p)
     if (r.ok) {
@@ -182,7 +215,7 @@ function ApiSection() {
       </Row>
       <Row label="密钥" hint={hint ? `已加密保存：${hint}` : '尚未保存。密钥用 Windows 加密存放在本机，不会写进设置文件，也不会随存档导出。'}>
         <div className="inline">
-          <TextField type="password" value={keyInput} placeholder={hint ? '输入新密钥以替换' : 'sk-...'} autoComplete="off" onChange={(e) => setKeyInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveKey()} />
+          <TextField type="password" value={keyInput} placeholder={hint ? '输入新密钥以替换' : 'sk-...'} autoComplete="off" onChange={(e) => setKeyInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveKey()} onBlur={() => void saveTypedKey()} />
           <Button size="sm" variant="primary" sfx="none" disabled={!keyInput.trim()} onClick={saveKey}>
             保存
           </Button>
@@ -210,8 +243,14 @@ function ApiSection() {
         {models && models.length > 0 && (
           <div className="model-chips">
             {models.map((m) => (
-              <button key={m} className={`chip ${m === p.model ? 'on' : ''}`} data-sfx="soft" onClick={() => setP({ model: m })}>
-                {m}
+              <button
+                key={m.id}
+                className={`chip ${m.id === p.model ? 'on' : ''}`}
+                data-sfx="soft"
+                data-tip={m.context ? `上下文上限 ${m.context.toLocaleString()} tokens` : undefined}
+                onClick={() => setP({ model: m.id, tokenRatio: undefined, ...(m.context && p.contextSize > m.context ? { contextSize: m.context } : {}) })}
+              >
+                {m.id}
               </button>
             ))}
           </div>
@@ -226,8 +265,8 @@ function ApiSection() {
       <Row label="单次回复上限" hint="单位 token，含思考内容。">
         <Slider value={p.maxTokens} min={256} max={16384} step={256} onChange={(v) => setP({ maxTokens: v })} />
       </Row>
-      <Row label="上下文预算" hint="发送内容的上限（token）。超出时从最早的聊天记录开始省略。越大越连贯，也越费。">
-        <Slider value={p.contextSize} min={4000} max={256000} step={4000} onChange={(v) => setP({ contextSize: v })} format={(v) => `${Math.round(v / 1000)}K`} />
+      <Row label="上下文预算" hint={<ContextHint p={p} limit={models?.find((m) => m.id === p.model)?.context} onUse={(v) => setP({ contextSize: v })} />}>
+        <Slider value={p.contextSize} min={4000} max={2_000_000} step={4000} onChange={(v) => setP({ contextSize: v })} format={(v) => (v >= 1_000_000 ? `${(v / 1_000_000).toFixed(2)}M` : `${Math.round(v / 1000)}K`)} />
       </Row>
       <div className="set-actions">
         <Button icon="sparkle" disabled={test.state === 'run'} onClick={runTest}>
@@ -299,6 +338,22 @@ function ChatSection() {
       <h3 className="set-sub">世界书</h3>
       <Row label="扫描深度" hint="检查最近几条消息里的关键词（条目可单独设置）。">
         <Slider value={c.wiScanDepth} min={1} max={20} onChange={(v) => set((d) => (d.wiScanDepth = v))} format={(v) => `${v} 条`} />
+      </Row>
+      <Row label="自动整理前情提要" hint="对话长到上下文放不下时，最早的消息不再发送；打开后药汤会在后台把它们整理成前情提要代替原文，免得 AI 忘掉前面的剧情（会额外调用一次接口）。">
+        <Toggle checked={c.autoSummary !== false} onChange={(v) => set((d) => (d.autoSummary = v))} />
+      </Row>
+      <Row label="提要篇幅" hint="前情提要最多写多少字。放不下的旧对话会全部并入提要，篇幅越长、保留的细节越多，但每次发送也多占一些上下文（1500 字约占 1000–1500 token）。改了之后，到对话页「侧记」里点「重新整理」可以立刻按新篇幅重写。">
+        <Select
+          value={String(c.recapLength ?? 1500)}
+          width={200}
+          options={[
+            { value: '900', label: '简要 · 900 字' },
+            { value: '1500', label: '标准 · 1500 字' },
+            { value: '2500', label: '详细 · 2500 字' },
+            { value: '4000', label: '很详细 · 4000 字' }
+          ]}
+          onChange={(v) => set((d) => (d.recapLength = Number(v)))}
+        />
       </Row>
       <Row label="预算" hint="世界书最多占上下文预算的比例。">
         <Slider value={c.wiBudgetPercent} min={5} max={80} onChange={(v) => set((d) => (d.wiBudgetPercent = v))} format={(v) => `${v}%`} />

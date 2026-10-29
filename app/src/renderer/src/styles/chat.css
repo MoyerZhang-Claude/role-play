@@ -616,6 +616,7 @@
 
 .composer-tools {
   display: flex;
+  flex: 1;
   gap: 4px;
   margin-left: -8px;
 }
@@ -658,4 +659,98 @@
     inset 0 0 0 3px var(--c-iso-bg),
     inset 0 0 0 4px rgba(var(--rgb-gold), 0.32),
     0 2px 12px var(--c-shadow);
+}
+
+/* ───────── 上下文用量 ───────── */
+.ctx-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--c-ink-faint);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+.ctx-gauge svg {
+  display: block;
+}
+.ctx-gauge-bg {
+  fill: none;
+  stroke: var(--c-ink-ghost);
+  stroke-width: 2.4;
+}
+.ctx-gauge-fg {
+  fill: none;
+  stroke: var(--c-ink-soft);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  transition: stroke-dasharray 600ms var(--ease-out);
+}
+.ctx-gauge.high .ctx-gauge-fg {
+  stroke: var(--c-warn);
+}
+.ctx-gauge.high {
+  color: var(--c-warn);
+}
+.ctx-gauge.warn .ctx-gauge-fg {
+  stroke: var(--c-rubric);
+}
+.ctx-gauge.warn {
+  color: var(--c-rubric);
+}
+
+.budget-bar {
+  margin: 4px 0 14px;
+}
+.budget-track {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--c-ink-wash);
+  box-shadow: inset 0 0 0 1px var(--c-ink-ghost);
+}
+.budget-track span {
+  display: block;
+  height: 100%;
+}
+.budget-fixed {
+  background: var(--c-ink-soft);
+}
+.budget-history {
+  background: var(--c-gold);
+}
+.budget-reserve {
+  background: repeating-linear-gradient(45deg, var(--c-ink-ghost) 0 3px, transparent 3px 6px);
+}
+.budget-bar.over .budget-fixed {
+  background: var(--c-rubric);
+}
+.budget-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 6px;
+  color: var(--c-ink-soft);
+}
+.budget-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.budget-warn {
+  color: var(--c-rubric);
+  margin: 6px 0 0;
+}
+
+.composer-preset {
+  min-width: 0;
+}
+.composer-preset-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

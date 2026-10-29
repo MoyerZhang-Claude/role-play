@@ -4,6 +4,7 @@
  */
 import type { Character, RegexScript, Worldbook } from './types'
 import { makeChunk, isPng } from './png'
+import { isAutoDisabled } from './regex'
 
 type AnyObj = Record<string, any>
 
@@ -63,12 +64,7 @@ function bookToCard(book: Worldbook): AnyObj {
 }
 
 /** 药汤为显示效果自动关掉的正则，导出时按原卡的状态写回 */
-function wasAutoDisabled(r: RegexScript, raw: AnyObj | undefined): boolean {
-  if (r.ytAutoDisabled != null) return r.ytAutoDisabled && r.disabled
-  if (!(r.ytKind === 'beautify' && r.markdownOnly && r.disabled)) return false
-  const orig = (raw?.data?.extensions?.regex_scripts as AnyObj[] | undefined)?.find((x) => x?.id === r.id)
-  return !!orig && !orig.disabled
-}
+const wasAutoDisabled = (r: RegexScript, raw: AnyObj | undefined) => isAutoDisabled(r, raw)
 
 function regexToST(r: RegexScript, raw?: AnyObj): AnyObj {
   return {

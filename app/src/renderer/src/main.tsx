@@ -9,6 +9,8 @@ import './styles/detail.css'
 import './styles/chat.css'
 import './styles/shelf.css'
 import './styles/books.css'
+import './styles/help.css'
+import './styles/groups.css'
 import { applyPixelScale, applyTheme } from './theme/apply'
 import { preloadFonts } from './theme/fonts'
 import { installFeedback } from './fx/feedback'
@@ -16,9 +18,12 @@ import { useSettings } from './state/settings'
 import { useLibrary } from './state/library'
 import { useChats } from './state/chats'
 import { usePresets } from './state/presets'
+import { useGroups } from './state/groups'
 import { App } from './App'
 import { installNavKeys, useRouter } from './state/router'
 import { yt } from './lib/api'
+import { audio } from './audio/engine'
+import { music } from './audio/music'
 
 async function boot() {
   applyPixelScale()
@@ -27,7 +32,7 @@ async function boot() {
   installNavKeys((cb) => yt.app.onCommand(cb))
   await useSettings.getState().load()
   const fonts = preloadFonts()
-  await Promise.all([useLibrary.getState().load(), useChats.getState().loadIndex(), usePresets.getState().load()])
+  await Promise.all([useLibrary.getState().load(), useChats.getState().loadIndex(), usePresets.getState().load(), useGroups.getState().load()])
   const s = useSettings.getState().s
   const params = new URLSearchParams(location.search)
   const playOpening = s.opening.enabled && params.get('opening') !== '0'
@@ -38,7 +43,7 @@ async function boot() {
 
 window.addEventListener('resize', applyPixelScale)
 // 自动化测试入口
-;(window as any).__yt = { chats: useChats, library: useLibrary, settings: useSettings, router: useRouter }
+;(window as any).__yt = { chats: useChats, library: useLibrary, settings: useSettings, router: useRouter, groups: useGroups, audio, music }
 ;(window as any).__importFiles = (files: { name: string; bytes: Uint8Array }[]) => import('./lib/importer').then((m) => m.importFiles(files))
 boot().catch((e) => {
   document.body.innerHTML = `<pre style="color:#c00;padding:20px;white-space:pre-wrap">启动失败：${String(e?.stack || e)}</pre>`

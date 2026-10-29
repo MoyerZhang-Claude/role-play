@@ -11,12 +11,23 @@ export interface SoundPrefs {
 }
 
 const SFX_BASE = 0.9
+/**
+ * 所有音效都提前 15ms 以上排进音频时间线，免得包络落在「过去」。
+ *
+ * 另一个更隐蔽的坑（「电音」的真正来源）：每个包络增益在第一个事件之前取默认值 1。
+ * 音频时钟走过 64 秒后，浮点取整会让声源的起点偶尔比包络早一个采样，
+ * 于是漏出一个满幅度的噪声采样——一声尖锐的「滋」。所以包络增益创建时一律先置 0（见 env()）。
+ */
+let LOOKAHEAD = 0.015
 // 背景音乐整体再安静一些（用户反馈）
 const MUSIC_BASE = 0.26
 
 class Engine {
   ctx: AudioContext | null = null
   master!: GainNode
+  /** 总输出（压缩之后），测试时用来录音 */
+  out!: AudioNode
+  verbOut!: AudioNode
   sfx!: GainNode
   music!: GainNode
   reverb!: ConvolverNode
@@ -33,6 +44,8 @@ class Engine {
     }
     const ctx = new AudioContext({ latencyHint: 'interactive' })
     this.ctx = ctx
+    // 声卡一次要的缓冲越大，排程就要越提前（至少 15ms）
+    LOOKAHEAD = Math.max(0.015, (ctx.baseLatency || 0) + 0.006)
     const comp = ctx.createDynamicsCompressor()
     comp.threshold.value = -14
     comp.knee.value = 12
@@ -42,6 +55,7 @@ class Engine {
     this.master = ctx.createGain()
     this.master.gain.value = 0.9
     this.master.connect(comp).connect(ctx.destination)
+    this.out = comp
 
     this.sfx = ctx.createGain()
     this.music = ctx.createGain()
@@ -56,6 +70,7 @@ class Engine {
     verbLp.type = 'lowpass'
     verbLp.frequency.value = 5200
     this.reverb.connect(verbLp).connect(verbOut).connect(this.master)
+    this.verbOut = verbOut
     this.sfxVerb = ctx.createGain()
     this.sfxVerb.gain.value = 0.2
     this.musicVerb = ctx.createGain()
@@ -98,16 +113,23 @@ class Engine {
 
   /* ───────── 基础合成积木 ───────── */
 
+  /** 包络用的增益：初值必须是 0，不能留默认的 1（见文件开头的说明） */
+  env(): GainNode {
+    const g = this.ctx!.createGain()
+    g.gain.value = 0
+    return g
+  }
+
   /** 一个带包络的振荡器 */
   tone(o: { type?: OscillatorType; f0: number; f1?: number; glide?: number; at?: number; peak: number; attack?: number; decay: number; dest?: AudioNode; verb?: number; pan?: number; detune?: number }) {
     const ctx = this.ensure()
-    const t = (o.at ?? ctx.currentTime) + 0.002
+    const t = Math.max(o.at ?? 0, ctx.currentTime) + LOOKAHEAD
     const osc = ctx.createOscillator()
     osc.type = o.type ?? 'sine'
     osc.frequency.setValueAtTime(o.f0, t)
     if (o.f1) osc.frequency.exponentialRampToValueAtTime(o.f1, t + (o.glide ?? o.decay * 0.6))
     if (o.detune) osc.detune.value = o.detune
-    const g = ctx.createGain()
+    const g = this.env()
     g.gain.setValueAtTime(0.0001, t)
     g.gain.linearRampToValueAtTime(o.peak, t + (o.attack ?? 0.002))
     g.gain.exponentialRampToValueAtTime(0.0001, t + (o.attack ?? 0.002) + o.decay)
@@ -132,7 +154,7 @@ class Engine {
   /** 滤波噪声爆发 */
   burst(o: { at?: number; type?: BiquadFilterType; freq: number; freq1?: number; q?: number; peak: number; attack?: number; decay: number; dest?: AudioNode; verb?: number; pan?: number }) {
     const ctx = this.ensure()
-    const t = (o.at ?? ctx.currentTime) + 0.002
+    const t = Math.max(o.at ?? 0, ctx.currentTime) + LOOKAHEAD
     const src = ctx.createBufferSource()
     src.buffer = this.noise
     const f = ctx.createBiquadFilter()
@@ -140,7 +162,7 @@ class Engine {
     f.frequency.setValueAtTime(o.freq, t)
     if (o.freq1) f.frequency.exponentialRampToValueAtTime(o.freq1, t + o.decay)
     f.Q.value = o.q ?? 1
-    const g = ctx.createGain()
+    const g = this.env()
     g.gain.setValueAtTime(0.0001, t)
     g.gain.linearRampToValueAtTime(o.peak, t + (o.attack ?? 0.002))
     g.gain.exponentialRampToValueAtTime(0.0001, t + (o.attack ?? 0.002) + o.decay)
@@ -165,7 +187,7 @@ class Engine {
   /** 柔和的 FM 铃音 */
   bell(o: { f: number; at?: number; peak: number; decay: number; ratio?: number; index?: number; dest?: AudioNode; verb?: number; pan?: number }) {
     const ctx = this.ensure()
-    const t = (o.at ?? ctx.currentTime) + 0.002
+    const t = Math.max(o.at ?? 0, ctx.currentTime) + LOOKAHEAD
     const car = ctx.createOscillator()
     const mod = ctx.createOscillator()
     const mg = ctx.createGain()
@@ -175,7 +197,7 @@ class Engine {
     mg.gain.setValueAtTime(idx, t)
     mg.gain.exponentialRampToValueAtTime(idx * 0.02 + 0.01, t + o.decay * 0.7)
     mod.connect(mg).connect(car.frequency)
-    const g = ctx.createGain()
+    const g = this.env()
     g.gain.setValueAtTime(0.0001, t)
     g.gain.linearRampToValueAtTime(o.peak, t + 0.004)
     g.gain.exponentialRampToValueAtTime(0.0001, t + o.decay)
@@ -219,10 +241,13 @@ class Engine {
   hover() {
     if (!this.sfxOn) return
     const now = performance.now()
-    if (now - this.lastHover < 70) return
+    const gap = now - this.lastHover
+    // 快速划过一排卡片时不要连成一串：间隔至少 110ms，连续划过时再轻一半
+    if (gap < 110) return
     this.lastHover = now
-    this.burst({ type: 'highpass', freq: 3800, q: 0.7, peak: 0.012, decay: 0.035 })
-    this.tone({ f0: 1650 + Math.random() * 120, peak: 0.009, decay: 0.05 })
+    const k = gap < 300 ? 0.5 : 1
+    this.burst({ type: 'highpass', freq: 3800, q: 0.7, peak: 0.012 * k, attack: 0.004, decay: 0.035 })
+    this.tone({ f0: 1650 + Math.random() * 120, peak: 0.009 * k, attack: 0.004, decay: 0.05 })
   }
 
   confirm() {

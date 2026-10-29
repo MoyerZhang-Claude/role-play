@@ -5,6 +5,7 @@ import { Button, Toggle, Medallion, Spinner } from '../components/ui'
 import { Icon } from '../icons/Icon'
 import { useLibrary, avatarSrc } from '../state/library'
 import { useChats } from '../state/chats'
+import { useGroups } from '../state/groups'
 import { useSettings } from '../state/settings'
 import { useUI, toast } from '../state/ui'
 import { yt } from '../lib/api'
@@ -142,6 +143,7 @@ function ImportModal({ sum, onClose }: { sum: ArchiveSummary; onClose: () => voi
       const r = await yt.archive.apply(sum.token, { mode, conflict, applySettings })
       await useLibrary.getState().load()
       await useChats.getState().loadIndex()
+      await useGroups.getState().load()
       if (applySettings) await useSettings.getState().load()
       audio.stamp()
       toast('ok', '存档已导入', `${r.characters} 位角色 · ${r.chats} 卷对话 · ${r.worldbooks} 本世界书${r.skipped ? ` · 跳过 ${r.skipped} 项` : ''}\n导入前的数据已自动备份到 data\\backups`)

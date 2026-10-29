@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import { usePresets } from '../../state/presets'
 import { useChats } from '../../state/chats'
 import { useSettings } from '../../state/settings'
 import { go } from '../../state/router'
@@ -102,9 +103,8 @@ export const Composer = forwardRef<ComposerHandle, { chatId: string; userName: s
               <Icon name={imp?.busy ? 'stop' : 'user'} /> {imp?.busy ? '停止' : '代写'}
             </button>
           </span>
-          <span className="composer-hint t-small">
-            <kbd className="kbd">Enter</kbd> 发送 · <kbd className="kbd">Ctrl</kbd>+<kbd className="kbd">Enter</kbd> 换行
-          </span>
+          <ContextGauge />
+          <PresetChip />
           <button className="composer-model t-small" data-sfx="soft" data-tip="接口设置" onClick={() => go({ name: 'settings', tab: 'api' })}>
             <Icon name="sparkle" /> {profile?.model || '未配置接口'}
           </button>
@@ -124,3 +124,38 @@ export const Composer = forwardRef<ComposerHandle, { chatId: string; userName: s
     </div>
   )
 })
+
+/** 上次发送占用了多少上下文：小圆环 + 百分比，悬停看明细 */
+function ContextGauge() {
+  const lb = useChats((s) => s.lastBuild)
+  const chatId = useChats((s) => s.active?.id)
+  if (!lb || !lb.budget || lb.chatId !== chatId) return null
+  const { context, fixed, history, reserve, calibrated } = lb.budget
+  const used = fixed + history
+  const frac = Math.min(1, used / context)
+  const pct = Math.round((used / context) * 100)
+  const k = (n: number) => (n >= 10000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}K` : n.toLocaleString())
+  const tip = `上次发送约 ${k(used)} / ${k(context)} tokens${calibrated ? '（已按实际用量校准）' : '（估算）'}：固定内容 ${k(fixed)}，聊天记录 ${k(history)}，另留 ${k(reserve)} 给回复${lb.trimmedHistory ? `；较早的 ${lb.trimmedHistory} 条聊天没有发送` : ''}`
+  const r = 7
+  const c = 2 * Math.PI * r
+  return (
+    <span className={`ctx-gauge t-small ${used + reserve > context ? 'warn' : pct >= 80 ? 'high' : ''}`} data-tip={tip}>
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+        <circle cx="9" cy="9" r={r} className="ctx-gauge-bg" />
+        <circle cx="9" cy="9" r={r} className="ctx-gauge-fg" strokeDasharray={`${c * frac} ${c}`} transform="rotate(-90 9 9)" />
+      </svg>
+      {pct}%
+    </span>
+  )
+}
+
+/** 当前用的预设（没有预设时不显示），点一下去「预设」页 */
+function PresetChip() {
+  const preset = usePresets((s) => s.active)
+  if (!preset) return null
+  return (
+    <button className="composer-model composer-preset t-small" data-sfx="soft" data-tip="当前预设（点击管理）" onClick={() => go({ name: 'presets' })}>
+      <Icon name="flask" /> <span className="composer-preset-name">{preset.name}</span>
+    </button>
+  )
+}

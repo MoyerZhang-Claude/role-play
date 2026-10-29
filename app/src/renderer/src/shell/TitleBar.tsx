@@ -6,14 +6,23 @@ import { useSettings } from '../state/settings'
 import { useRouter, go } from '../state/router'
 import { useLibrary } from '../state/library'
 import { useChats } from '../state/chats'
+import { useGroups } from '../state/groups'
 import { music } from '../audio/music'
 
 function Crumbs() {
   const route = useRouter((s) => s.route)
   const chars = useLibrary((s) => s.chars)
   const index = useChats((s) => s.index)
+  const groups = useGroups((s) => s.groups)
   const parts: { label: string; onClick?: () => void }[] = [{ label: '书斋', onClick: () => go({ name: 'home' }) }]
-  if (route.name === 'character' || route.name === 'chat' || (route.name === 'editor' && route.id)) {
+  const grp = route.name === 'group' ? groups.find((g) => g.id === route.id) : route.name === 'chat' ? groups.find((g) => g.id === route.characterId) : undefined
+  if (grp) {
+    parts.push({ label: grp.name || '群聊', onClick: () => go({ name: 'group', id: grp.id }) })
+    if (route.name === 'chat') {
+      const s = index[route.chatId]
+      parts.push({ label: s?.title?.split(' · ').slice(1).join(' · ') || '对话' })
+    }
+  } else if (route.name === 'character' || route.name === 'chat' || (route.name === 'editor' && route.id)) {
     const id = route.name === 'chat' ? route.characterId : route.id!
     const ch = chars.find((c) => c.id === id)
     if (ch) parts.push({ label: ch.name, onClick: () => go({ name: 'character', id: ch.id }) })
@@ -25,6 +34,8 @@ function Crumbs() {
   } else if (route.name === 'editor') parts.push({ label: '新建角色' })
   else if (route.name === 'settings') parts.push({ label: '设置' })
   else if (route.name === 'books') parts.push({ label: '世界书' })
+  else if (route.name === 'presets') parts.push({ label: '预设' })
+  else if (route.name === 'recent') parts.push({ label: '续读' })
   return (
     <div className="tb-crumbs">
       {parts.map((p, i) => (

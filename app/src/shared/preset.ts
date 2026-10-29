@@ -5,6 +5,7 @@
 import type { ImportReport, MsgRole, PresetPrompt, PromptPreset, ReportItem } from './types'
 import { normalizeRegexScript } from './regex'
 import { hasEjs, needsScript } from './presetRuntime'
+import { estimateTokens } from './tokens'
 import { newId } from './id'
 import { BLOCK_LABEL, MARKERS } from './prompt'
 
@@ -33,7 +34,6 @@ const IGNORED: Record<string, string> = {
   continue_postfix: '续写后缀',
   seed: '随机种子',
   n: '一次生成多条',
-  group_nudge_prompt: '群聊提示',
   send_if_empty: '空消息时发送的内容',
   wrap_in_quotes: '自动加引号',
   show_external_models: '显示外部模型',
@@ -93,6 +93,7 @@ export function parsePreset(j: AnyObj, fileName: string): { preset: PromptPreset
     },
     continueNudge: typeof j.continue_nudge_prompt === 'string' ? j.continue_nudge_prompt : undefined,
     impersonate: typeof j.impersonation_prompt === 'string' ? j.impersonation_prompt : undefined,
+    groupNudge: typeof j.group_nudge_prompt === 'string' && j.group_nudge_prompt.trim() ? j.group_nudge_prompt : undefined,
     newChat: typeof j.new_chat_prompt === 'string' ? j.new_chat_prompt : undefined,
     newExampleChat: typeof j.new_example_chat_prompt === 'string' ? j.new_example_chat_prompt : undefined,
     params: {
@@ -146,12 +147,12 @@ export function parsePreset(j: AnyObj, fileName: string): { preset: PromptPreset
   }
   const bulk = enabled.reduce((n, o) => {
     const p = prompts.find((x) => x.identifier === o.identifier)
-    return n + (p && !p.marker ? p.content.length : 0)
+    return n + (p && !p.marker ? estimateTokens(p.content) : 0)
   }, 0)
-  if (bulk > 30000)
+  if (bulk > 16000)
     items.push({
       level: 'warn',
-      title: `启用的提示词很长（约 ${Math.round(bulk / 1000)}K 字）`,
+      title: `启用的提示词很长（约 ${Math.round(bulk / 1000)}K tokens）`,
       detail: '每次回复都会先发送这些内容，再加上角色、世界书和聊天记录。如果超出模型的上下文上限，接口会报错；可以在预设面板里关掉用不到的段落，或在「设置 → 接口」里调大上下文。药汤会优先舍去较早的聊天记录来腾出位置。'
     })
   const ejs = prompts.filter((p) => hasEjs(p.content))

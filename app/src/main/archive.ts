@@ -11,7 +11,7 @@ import type { ArchiveManifest, ArchiveSummary, ApplyOptions } from '@shared/type
 export type { ArchiveManifest, ArchiveSummary, ApplyOptions }
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/
-const ALLOWED = [/^manifest\.json$/, /^settings\.json$/, /^characters\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)$/, /^chats\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)\.json$/, /^worldbooks\/([A-Za-z0-9_-]+)\.json$/]
+const ALLOWED = [/^manifest\.json$/, /^settings\.json$/, /^characters\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)$/, /^chats\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)\.json$/, /^worldbooks\/([A-Za-z0-9_-]+)\.json$/, /^groups\/([A-Za-z0-9_-]+)\.json$/]
 
 const pending = new Map<string, Record<string, Uint8Array>>()
 
@@ -38,6 +38,23 @@ export async function buildArchive(store: DataStore, opts: { characterIds: strin
       const b = await store.readBytes(`chats/${d.name}/${f.name}`)
       if (b) {
         files[`chats/${d.name}/${f.name}`] = b
+        counts.chats++
+      }
+    }
+  }
+  // 群聊：全部打包时都带上；只打包部分角色时，带上至少有两位成员被选中的群
+  for (const f of await store.list('groups')) {
+    if (f.dir || !f.name.endsWith('.json')) continue
+    const g = await store.readJSON<any>(`groups/${f.name}`)
+    if (!g?.id || !ID.test(g.id)) continue
+    if (wanted && (g.memberIds ?? []).filter((id: string) => wanted.has(id)).length < 2) continue
+    const b = await store.readBytes(`groups/${f.name}`)
+    if (b) files[`groups/${f.name}`] = b
+    for (const c of await store.list(`chats/${g.id}`)) {
+      if (c.dir || !c.name.endsWith('.json')) continue
+      const cb = await store.readBytes(`chats/${g.id}/${c.name}`)
+      if (cb) {
+        files[`chats/${g.id}/${c.name}`] = cb
         counts.chats++
       }
     }
@@ -125,6 +142,7 @@ export async function applyArchive(store: DataStore, token: string, opts: ApplyO
     await store.remove('characters')
     await store.remove('chats')
     await store.remove('worldbooks')
+    await store.remove('groups')
   }
   const result = { characters: 0, chats: 0, worldbooks: 0, skipped: 0, backup }
   const skipChars = new Set<string>()
@@ -151,6 +169,7 @@ export async function applyArchive(store: DataStore, token: string, opts: ApplyO
       if (opts.mode === 'merge' && opts.conflict === 'skip' && (await store.exists(n))) continue
       result.worldbooks++
     }
+    if (n.startsWith('groups/') && opts.mode === 'merge' && opts.conflict === 'skip' && (await store.exists(n))) continue
     await store.writeBytes(n, data)
   }
   if (opts.applySettings && files['settings.json']) {

@@ -16,8 +16,7 @@ interface Item {
 /** 左侧书脊：深色皮革、烫金像素图标；当前页有一条朱砂书签带 */
 export function Spine() {
   const route = useRouter((s) => s.route)
-  const recent = useChats((s) => s.recent)
-  const active = route.name === 'home' || route.name === 'character' ? 'home' : route.name === 'chat' ? 'chat' : route.name === 'editor' ? 'new' : route.name === 'settings' ? 'settings' : route.name === 'books' ? 'books' : ''
+  const active = route.name === 'home' || route.name === 'character' || route.name === 'group' ? 'home' : route.name === 'chat' || route.name === 'recent' ? 'chat' : route.name === 'editor' ? 'new' : route.name === 'settings' ? 'settings' : route.name === 'books' ? 'books' : route.name === 'presets' ? 'presets' : ''
 
   const top: Item[] = [
     { key: 'home', icon: 'book', label: '书斋', onClick: () => go({ name: 'home' }) },
@@ -25,13 +24,10 @@ export function Spine() {
       key: 'chat',
       icon: 'quill',
       label: '续读',
-      onClick: () => {
-        const r = recent(1)[0]
-        if (r) go({ name: 'chat', characterId: r.characterId, chatId: r.id })
-        else toast('info', '还没有对话', '先在书斋里选一位角色，开始第一卷故事')
-      }
+      onClick: () => go({ name: 'recent' })
     },
     { key: 'books', icon: 'globe', label: '世界书', onClick: () => go({ name: 'books' }) },
+    { key: 'presets', icon: 'flask', label: '预设', onClick: () => go({ name: 'presets' }) },
     { key: 'import', icon: 'scroll', label: '导入', onClick: () => pickAndImport() },
     { key: 'new', icon: 'plus', label: '新建', onClick: () => go({ name: 'editor' }) }
   ]

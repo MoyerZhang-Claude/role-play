@@ -4,6 +4,7 @@ import { renderRich } from '../../render/rich'
 import { renderIsolated } from '../../render/isolated'
 import { effectiveScripts, displayScripts } from '@shared/presetRuntime'
 import { usePresets } from '../../state/presets'
+import { useIsoCss } from '../../state/isoCss'
 import { IsoBody } from '../../components/IsoBody'
 import { useSmoothText, InkTrail } from './reveal'
 import { Medallion, IconButton, Spinner, Button } from '../../components/ui'
@@ -55,6 +56,11 @@ export const MessageItem = memo(function MessageItem(p: MsgViewProps) {
     [isoMode, sw?.text, scripts, p.macros, isUser, p.depth]
   )
   const useIso = !!iso?.styled && !editing
+  // 这条消息的样式交给整卷共享（生成中、编辑中暂时撤下）
+  useEffect(() => {
+    useIsoCss.getState().put(msg.id, iso?.styled ? iso.css.join('\n') : '')
+  }, [msg.id, iso])
+  useEffect(() => () => useIsoCss.getState().put(msg.id, ''), [msg.id])
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const trail = useRef(new InkTrail())

@@ -10,7 +10,10 @@ import { CharacterPage } from './pages/CharacterPage'
 import { Editor } from './pages/Editor'
 import { ChatPage } from './pages/ChatPage'
 import { SettingsPage } from './pages/Settings'
+import { RecentPage } from './pages/RecentPage'
+import { PresetsPage } from './pages/PresetPanel'
 import { BooksPage } from './pages/BooksPage'
+import { GroupPage } from './pages/Groups'
 import { Opening } from './opening/Opening'
 import { music } from './audio/music'
 
@@ -28,6 +31,12 @@ function RouteView({ route }: { route: Route }) {
       return <SettingsPage tab={route.tab} />
     case 'books':
       return <BooksPage id={route.id} />
+    case 'presets':
+      return <PresetsPage />
+    case 'recent':
+      return <RecentPage />
+    case 'group':
+      return <GroupPage id={route.id} />
   }
 }
 

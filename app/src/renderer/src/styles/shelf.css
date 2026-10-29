@@ -177,3 +177,106 @@ body.is-dragging-card .recent-card:not(.is-slot):hover {
 .pyre.burning .pyre-flame {
   filter: drop-shadow(0 0 14px rgba(255, 170, 80, 1)) brightness(1.3);
 }
+
+/* ───────── 续读：书斋只占一行 / 续读页 ───────── */
+.recent-row.one-row {
+  grid-template-columns: none;
+}
+.recent-row.grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.section-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 14px;
+  font-size: 13px;
+  color: var(--c-ink-soft);
+  border-bottom: 1px dotted var(--c-ink-line);
+  transition: color var(--dur) ease;
+}
+.section-link:hover {
+  color: var(--c-rubric);
+}
+.recent-more {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  justify-items: start;
+  gap: 4px;
+  padding: 14px 18px;
+  text-align: left;
+  border-radius: 2px;
+  border-style: dashed;
+  background: rgba(var(--rgb-ink), 0.02);
+  animation: rise-in 420ms var(--ease-out) both;
+  transition:
+    transform 260ms var(--ease-out),
+    box-shadow 260ms ease,
+    border-color 260ms ease;
+}
+.recent-more:hover {
+  transform: translateY(-2px);
+  border-color: var(--c-ink-line);
+}
+.recent-more-stack {
+  position: relative;
+  width: 38px;
+  height: 30px;
+}
+.recent-more-stack i {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--c-ink-line);
+  border-radius: 2px;
+  background: var(--c-paper-sheet-solid);
+  box-shadow: 0 1px 2px var(--c-shadow);
+}
+.recent-more-stack i:nth-child(1) {
+  transform: translate(8px, -6px) rotate(6deg);
+  opacity: 0.6;
+}
+.recent-more-stack i:nth-child(2) {
+  transform: translate(4px, -3px) rotate(3deg);
+  opacity: 0.8;
+}
+.recent-more:hover .recent-more-stack i:nth-child(1) {
+  transform: translate(12px, -9px) rotate(9deg);
+}
+.recent-more-stack i {
+  transition: transform 300ms var(--ease-out);
+}
+.recent-more-text {
+  font-size: 15px;
+  color: var(--c-ink-soft);
+}
+.recent-more-text b {
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--c-rubric);
+  margin: 0 2px;
+}
+.recent-more-go {
+  display: inline-flex;
+  align-items: center;
+  color: var(--c-ink-faint);
+}
+.recent-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 24px;
+  margin-bottom: 26px;
+}
+.recent-page-head .t-soft {
+  max-width: 60ch;
+  margin: 6px 0 0;
+}
+.recent-page-title {
+  font-size: 44px;
+  margin: 2px 0 0;
+}
+.recent-page-count {
+  color: var(--c-ink-faint);
+}
+

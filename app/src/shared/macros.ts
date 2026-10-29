@@ -19,6 +19,16 @@ export interface MacroContext {
   lastCharMessage?: string
   lastMessageId?: number
   input?: string
+  firstMes?: string
+  depthPrompt?: string
+  /** 上下文预算（{{maxPrompt}}） */
+  maxPrompt?: number
+  /** 本次生成方式（{{lastGenerationType}}） */
+  genType?: string
+  /** 群聊成员名（{{group}}） */
+  group?: string
+  /** 群聊里没被设为静默的成员名（{{groupNotMuted}}） */
+  groupNotMuted?: string
   /** 局部变量（随对话保存），会被 setvar 等修改 */
   vars?: Record<string, string>
   /** 全局变量 */
@@ -65,6 +75,33 @@ function roll(formula: string): string {
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
+/** moment 风格的日期格式（只支持常用记号） */
+function formatDate(d: Date, fmt: string): string {
+  const h12 = d.getHours() % 12 || 12
+  const tokens: Record<string, string> = {
+    YYYY: String(d.getFullYear()),
+    YY: String(d.getFullYear()).slice(-2),
+    MMMM: `${d.getMonth() + 1}月`,
+    MM: pad(d.getMonth() + 1),
+    M: String(d.getMonth() + 1),
+    DD: pad(d.getDate()),
+    D: String(d.getDate()),
+    dddd: WEEKDAYS[d.getDay()],
+    ddd: WEEKDAYS[d.getDay()].replace('星期', '周'),
+    HH: pad(d.getHours()),
+    H: String(d.getHours()),
+    hh: pad(h12),
+    h: String(h12),
+    mm: pad(d.getMinutes()),
+    m: String(d.getMinutes()),
+    ss: pad(d.getSeconds()),
+    s: String(d.getSeconds()),
+    A: d.getHours() < 12 ? '上午' : '下午',
+    a: d.getHours() < 12 ? '上午' : '下午'
+  }
+  return fmt.replace(/\[([^\]]*)\]|YYYY|YY|MMMM|MM|M|DD|D|dddd|ddd|HH|H|hh|h|mm|m|ss|s|A|a/g, (t, lit?: string) => (lit !== undefined ? lit : tokens[t] ?? t))
+}
+
 export function substituteMacros(input: string, ctx: MacroContext): string {
   if (!input || (input.indexOf('{{') < 0 && input.indexOf('<') < 0)) return input
   let s = input
@@ -100,6 +137,17 @@ export function substituteMacros(input: string, ctx: MacroContext): string {
     const store = kind.toLowerCase() === 'getvar' ? vars : gvars
     return store[k.trim()] ?? ''
   })
+  s = s.replace(/\{\{(hasvar|varexists|hasglobalvar|globalvarexists)::([^}]*)\}\}/gi, (_m, kind: string, k: string) => {
+    const store = kind.toLowerCase().includes('global') ? gvars : vars
+    return k.trim() in store ? 'true' : 'false'
+  })
+  // {{time_UTC+8}}：指定时区的时间
+  s = s.replace(/\{\{time_UTC([+-]\d{1,2})\}\}/gi, (_m, off: string) => {
+    const t = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + Number(off) * 3600000)
+    return `${pad(t.getHours())}:${pad(t.getMinutes())}`
+  })
+  // {{datetimeformat YYYY-MM-DD HH:mm}}（常用的 moment 格式）
+  s = s.replace(/\{\{datetimeformat +([^}]+)\}\}/gi, (_m, fmt: string) => formatDate(now, fmt.trim()))
 
   const map: Record<string, string | undefined> = {
     user: ctx.user,
@@ -122,6 +170,16 @@ export function substituteMacros(input: string, ctx: MacroContext): string {
     lastcharmessage: ctx.lastCharMessage,
     lastmessageid: ctx.lastMessageId != null ? String(ctx.lastMessageId) : undefined,
     input: ctx.input,
+    charfirstmessage: ctx.firstMes,
+    chardepthprompt: ctx.depthPrompt,
+    maxprompt: ctx.maxPrompt != null ? String(ctx.maxPrompt) : undefined,
+    lastgenerationtype: ctx.genType ?? 'normal',
+    ismobile: 'false',
+    // 药汤没有群聊：群聊相关的宏都按当前角色处理
+    group: ctx.group ?? ctx.char,
+    groupnotmuted: ctx.groupNotMuted ?? ctx.group ?? ctx.char,
+    charifnotgroup: ctx.group ?? ctx.char,
+    notchar: ctx.user,
     newline: '\n',
     noop: '',
     time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,

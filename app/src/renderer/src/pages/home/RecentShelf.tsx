@@ -10,32 +10,35 @@ import { Icon } from '../../icons/Icon'
 import { relTime } from '../../lib/api'
 import { audio } from '../../audio/engine'
 import { ripple } from '../../fx/inkLayer'
+import { useGroups } from '../../state/groups'
+import { GroupSeal } from '../Groups'
 
-const LIMIT = 6
 const HOLD_MS = 280
 const MOVE_START = 8
 
 /** 续读区要显示的对话：去掉已移出的（之后有新内容会重新出现），按手动顺序，新对话排在最前 */
 export function useRecentList(index: Record<string, ChatSummary>, chars: Character[]): ChatSummary[] {
   const home = useSettings((s) => s.s.home)
+  const groups = useGroups((s) => s.groups)
   return useMemo(() => {
-    const alive = Object.values(index).filter((s) => chars.some((c) => c.id === s.characterId) && !(home.recentHidden[s.id] && s.updatedAt <= home.recentHidden[s.id]))
+    const alive = Object.values(index).filter((s) => (chars.some((c) => c.id === s.characterId) || groups.some((g) => g.id === s.characterId)) && !(home.recentHidden[s.id] && s.updatedAt <= home.recentHidden[s.id]))
     alive.sort((a, b) => b.updatedAt - a.updatedAt)
     const pos = new Map(home.recentOrder.map((id, i) => [id, i]))
     // 手动排序之后有新动静的对话排最前；其余没排过序的旧对话接在后面
     const fresh = alive.filter((s) => !pos.has(s.id) && s.updatedAt > home.recentOrderAt)
     const ordered = alive.filter((s) => pos.has(s.id)).sort((a, b) => pos.get(a.id)! - pos.get(b.id)!)
     const rest = alive.filter((s) => !pos.has(s.id) && s.updatedAt <= home.recentOrderAt)
-    return [...fresh, ...ordered, ...rest].slice(0, LIMIT)
-  }, [index, chars, home])
+    return [...fresh, ...ordered, ...rest]
+  }, [index, chars, groups, home])
 }
 
-function CardBody({ s, ch }: { s: ChatSummary; ch: Character }) {
+function CardBody({ s, ch }: { s: ChatSummary; ch?: Character }) {
+  const g = useGroups((st) => st.groups.find((x) => x.id === s.characterId))
   return (
     <>
-      <Medallion src={avatarSrc(ch)} name={ch.name} size={46} />
+      {g ? <GroupSeal group={g} size={32} /> : <Medallion src={ch ? avatarSrc(ch) : null} name={ch?.name ?? ''} size={46} />}
       <span className="recent-body">
-        <span className="recent-name">{ch.name}</span>
+        <span className="recent-name">{g ? g.name : ch?.name}</span>
         <span className="recent-title">{s.title.split(' · ').slice(1, 2).join('')}</span>
         <span className="recent-preview">{s.preview || '（尚未落笔）'}</span>
       </span>
@@ -67,7 +70,11 @@ function move<T>(arr: T[], from: number, to: number): T[] {
   return a
 }
 
-export function RecentShelf({ items, chars }: { items: ChatSummary[]; chars: Character[] }) {
+/**
+ * 续读卡片。书斋里只显示一行（allIds 是全部续读的顺序，排序时没显示出来的卡保持在后面），
+ * more > 0 时最后一格是「展开」，跳到续读页。
+ */
+export function RecentShelf({ items, chars, allIds, more = 0, grid = false }: { items: ChatSummary[]; chars: Character[]; allIds?: string[]; more?: number; grid?: boolean }) {
   const update = useSettings((s) => s.update)
   const [drag, setDragState] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -171,7 +178,8 @@ export function RecentShelf({ items, chars }: { items: ChatSummary[]; chars: Cha
     const finish = () => {
       if (d.to !== d.from)
         update((s) => {
-          s.home.recentOrder = move(ids, d.from, d.to)
+          const moved = move(ids, d.from, d.to)
+          s.home.recentOrder = [...moved, ...(allIds ?? []).filter((x) => !moved.includes(x))]
           s.home.recentOrderAt = Date.now()
         })
       setDrag(null)
@@ -197,7 +205,8 @@ export function RecentShelf({ items, chars }: { items: ChatSummary[]; chars: Cha
           st.home.recentOrder = st.home.recentOrder.filter((x) => x !== s.id)
         })
         const ch = chars.find((c) => c.id === s.characterId)
-        toast('ok', '已从续读中移出', `「${ch?.name ?? ''}」的这一卷仍保存在角色页的卷册里`, {
+        const grp = useGroups.getState().get(s.characterId)
+        toast('ok', '已从续读中移出', grp ? `群聊「${grp.name}」的这一卷仍保存在群聊页的卷册里` : `「${ch?.name ?? ''}」的这一卷仍保存在角色页的卷册里`, {
           label: '撤销',
           run: () =>
             update((st) => {
@@ -235,10 +244,10 @@ export function RecentShelf({ items, chars }: { items: ChatSummary[]; chars: Cha
 
   return (
     <>
-      <div className="recent-row">
+      <div className={`recent-row ${grid ? 'grid' : 'one-row'}`} style={grid ? undefined : { gridTemplateColumns: `repeat(${items.length + (more ? 1 : 0)}, minmax(0, 1fr))` }}>
         {order.map((id, i) => {
           const s = items.find((x) => x.id === id)!
-          const ch = chars.find((c) => c.id === s.characterId)!
+          const ch = chars.find((c) => c.id === s.characterId)
           const isGhostSlot = drag?.id === id
           return (
             <button
@@ -261,17 +270,32 @@ export function RecentShelf({ items, chars }: { items: ChatSummary[]; chars: Cha
             </button>
           )
         })}
+        {more > 0 && (
+          <button className="recent-more sheet" data-hover-sfx data-sfx="page" onClick={() => go({ name: 'recent' })}>
+            <span className="recent-more-stack" aria-hidden>
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="recent-more-text">
+              还有 <b className="t-display">{more}</b> 卷
+            </span>
+            <span className="recent-more-go t-small">
+              全部续读 <Icon name="chevR" />
+            </span>
+          </button>
+        )}
       </div>
       {createPortal(
         <>
-          {drag && dragged && draggedCh && (
+          {drag && dragged && (
             <div
               ref={ghostRef}
               className={`recent-ghost sheet ${drag.over ? 'over' : ''} ${drag.phase}`}
               style={{ left: drag.x - drag.ox, top: drag.y - drag.oy, width: drag.w, height: drag.h, ['--tilt' as any]: `${drag.tilt}deg` }}
             >
               <div className="recent-ghost-inner">
-                <CardBody s={dragged} ch={draggedCh} />
+                <CardBody s={dragged} ch={draggedCh ?? undefined} />
               </div>
             </div>
           )}

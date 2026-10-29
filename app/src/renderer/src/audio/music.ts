@@ -53,7 +53,7 @@ class Music {
     const ctx = audio.ensure()
     if (this.playing) return
     this.playing = true
-    this.bus = ctx.createGain()
+    this.bus = audio.env()
     this.bus.gain.setValueAtTime(0.0001, ctx.currentTime)
     this.bus.gain.exponentialRampToValueAtTime(1, ctx.currentTime + fadeIn)
     this.bus.connect(audio.music)
@@ -144,7 +144,7 @@ class Music {
     this.padVoices = []
     chord.forEach((m, k) => {
       const f = mtof(k === 0 ? m : m)
-      const g = ctx.createGain()
+      const g = audio.env()
       const peak = k === 0 ? 0.062 : 0.034
       g.gain.setValueAtTime(0.0001, t)
       g.gain.linearRampToValueAtTime(peak, t + att)

@@ -16,6 +16,7 @@ import { renderRich } from '../render/rich'
 import { relTime, yt } from '../lib/api'
 import { exportCharacterCard } from './CardExport'
 import { needsScript } from '@shared/presetRuntime'
+import { isAutoDisabled } from '@shared/regex'
 
 type Tab = 'intro' | 'chats' | 'book' | 'regex' | 'report'
 
@@ -311,7 +312,7 @@ function DisplayMode({ ch }: { ch: Character }) {
     let scripts = ch.regexScripts
     let auto = ch.display?.autoEnabled ?? []
     if (m === 'isolated') {
-      auto = scripts.filter((r) => r.ytKind === 'beautify' && r.disabled && !needsScript(r)).map((r) => r.id)
+      auto = scripts.filter((r) => isAutoDisabled(r, ch.raw) && !needsScript(r)).map((r) => r.id)
       scripts = scripts.map((r) => (auto.includes(r.id) ? { ...r, disabled: false } : r))
     } else {
       scripts = scripts.map((r) => (auto.includes(r.id) ? { ...r, disabled: true } : r))

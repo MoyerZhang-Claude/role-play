@@ -1,7 +1,8 @@
 /**
  * AI 接口层（在主进程运行，密钥不进入页面）。
  * - openai：OpenAI 兼容格式 —— 已实现并用 DeepSeek 实测
- * - anthropic / gemini：已按官方格式实现，尚未实测（界面上标注「未验证」）
+ * - gemini：按官方格式实现，已实测（免费层级 gemini-2.5-flash：流式、思考、停止、用量）
+ * - anthropic：已按官方格式实现，尚未实测（界面上标注「未验证」）
  */
 import { net } from 'electron'
 import type { ApiProfile, LLMEvent, LLMMessage, TokenUsage } from '@shared/types'
@@ -110,6 +111,8 @@ async function readError(res: Response): Promise<string> {
     502: '网关错误',
     503: '服务暂时不可用（可能过载）'
   }
+  // Google 没收到密钥时的说法
+  if (/unregistered callers|API key not valid|API_KEY_INVALID/i.test(String(msg))) return `密钥无效或没有保存：请到「设置 → 接口」填写密钥，并点「保存」（HTTP ${res.status}）`
   const h = hint[res.status] ? `${hint[res.status]}：` : ''
   return `${h}${String(msg).slice(0, 600) || res.statusText}（HTTP ${res.status}）`
 }
@@ -241,26 +244,29 @@ function mapOpenAIUsage(u: any): TokenUsage | undefined {
 
 /* ───────────────── Anthropic（未验证） ───────────────── */
 
-function toAnthropic(messages: LLMMessage[]) {
-  const system = messages
-    .filter((m) => m.role === 'system')
-    .map((m) => m.content)
-    .join('\n\n')
+/**
+ * 没有「对话中途系统消息」的接口（Claude、Gemini）：
+ * 开头连着的系统消息作为系统提示；中途的（深度注入、历史后指令、群聊的「轮到谁」）
+ * 并入相邻的用户消息、留在原位。全塞进系统提示会让对话停在 AI 的那一句上，Gemini 常因此回空白。
+ */
+export function splitSystem(messages: LLMMessage[]) {
+  const lead: string[] = []
+  let i = 0
+  while (i < messages.length && messages[i].role === 'system') lead.push(messages[i++].content)
   const conv: { role: 'user' | 'assistant'; content: string }[] = []
-  for (const m of messages) {
-    if (m.role === 'system') {
-      // 中途的系统消息并入相邻的用户消息
-      if (conv.length) {
-        const last = conv[conv.length - 1]
-        if (last.role === 'user') last.content += `\n\n[系统] ${m.content}`
-        else conv.push({ role: 'user', content: `[系统] ${m.content}` })
-      }
-      continue
-    }
+  for (; i < messages.length; i++) {
+    const m = messages[i]
+    const role = m.role === 'assistant' ? 'assistant' : 'user'
+    const text = m.role === 'system' ? `[系统] ${m.content}` : m.content
     const last = conv[conv.length - 1]
-    if (last && last.role === m.role) last.content += '\n\n' + m.content
-    else conv.push({ role: m.role, content: m.content })
+    if (last && last.role === role) last.content += '\n\n' + text
+    else conv.push({ role, content: text })
   }
+  return { system: lead.join('\n\n'), conv }
+}
+
+function toAnthropic(messages: LLMMessage[]) {
+  const { system, conv } = splitSystem(messages)
   if (!conv.length || conv[0].role !== 'user') conv.unshift({ role: 'user', content: '（开始）' })
   return { system, conv }
 }
@@ -309,25 +315,42 @@ async function streamAnthropic(p: ApiProfile, key: string | null, requestId: str
   emit({ type: 'done', requestId, finish, usage, model })
 }
 
-/* ───────────────── Gemini（未验证） ───────────────── */
+/* ───────────────── Gemini ───────────────── */
+
+/** 角色扮演软件不替用户过滤内容：关闭 Gemini 的安全过滤（2.x 以后的模型用 OFF，更早的用 BLOCK_NONE） */
+function geminiSafety(model: string) {
+  const off = /gemini-(2|3|4)/i.test(model) ? 'OFF' : 'BLOCK_NONE'
+  return ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT', 'HARM_CATEGORY_CIVIC_INTEGRITY'].map((category) => ({ category, threshold: off }))
+}
+
+/** 思考设置：Gemini 3 用 thinkingLevel；2.5 用 thinkingBudget（Pro 不能完全关闭） */
+function geminiThinking(model: string, mode: ApiProfile['thinking']): Record<string, unknown> | undefined {
+  if (mode === 'default') return undefined
+  if (/gemini-3/i.test(model)) return { includeThoughts: mode !== 'off', thinkingLevel: mode === 'high' || mode === 'max' ? 'high' : 'low' }
+  const pro = /pro/i.test(model)
+  if (mode === 'off') return { thinkingBudget: pro ? 128 : 0 }
+  return { includeThoughts: true, thinkingBudget: mode === 'low' ? 1024 : mode === 'high' ? 8192 : 24576 }
+}
+
+const GEMINI_BLOCK: Record<string, string> = {
+  SAFETY: '安全过滤',
+  PROHIBITED_CONTENT: '禁止内容',
+  BLOCKLIST: '屏蔽词',
+  SPII: '敏感个人信息',
+  RECITATION: '疑似照搬受版权保护的内容',
+  OTHER: '其它原因',
+  IMAGE_SAFETY: '图像安全'
+}
 
 async function streamGemini(p: ApiProfile, key: string | null, requestId: string, messages: LLMMessage[], signal: AbortSignal, emit: Emit) {
-  const system = messages
-    .filter((m) => m.role === 'system')
-    .map((m) => m.content)
-    .join('\n\n')
-  const contents: { role: 'user' | 'model'; parts: { text: string }[] }[] = []
-  for (const m of messages) {
-    if (m.role === 'system') continue
-    const role = m.role === 'assistant' ? 'model' : 'user'
-    const last = contents[contents.length - 1]
-    if (last && last.role === role) last.parts[0].text += '\n\n' + m.content
-    else contents.push({ role, parts: [{ text: m.content }] })
-  }
+  const { system, conv } = splitSystem(messages)
+  const contents: { role: 'user' | 'model'; parts: { text: string }[] }[] = conv.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
+  // Gemini 要求至少有一条对话内容
+  if (!contents.length) contents.push({ role: 'user', parts: [{ text: '（开始）' }] })
   const generationConfig: Record<string, unknown> = { temperature: p.temperature, topP: p.topP, maxOutputTokens: p.maxTokens }
-  if (p.thinking === 'off') generationConfig.thinkingConfig = { thinkingBudget: 0 }
-  else if (p.thinking !== 'default') generationConfig.thinkingConfig = { includeThoughts: true, thinkingBudget: p.thinking === 'low' ? 1024 : p.thinking === 'high' ? 8192 : 24576 }
-  const body: Record<string, unknown> = { contents, generationConfig, ...parseExtra(p.extraBody) }
+  const thinking = geminiThinking(p.model, p.thinking)
+  if (thinking) generationConfig.thinkingConfig = thinking
+  const body: Record<string, unknown> = { contents, generationConfig, safetySettings: geminiSafety(p.model), ...parseExtra(p.extraBody) }
   if (system) body.systemInstruction = { parts: [{ text: system }] }
   const base = trimBase(p.baseUrl) || 'https://generativelanguage.googleapis.com'
   const root = /\/v1(beta)?$/.test(base) ? base : base + '/v1beta'
@@ -342,6 +365,7 @@ async function streamGemini(p: ApiProfile, key: string | null, requestId: string
   if (!res.body) throw new Error('接口没有返回内容')
   let usage: TokenUsage | undefined
   let finish: string | undefined
+  let wrote = false
   for await (const { data } of sseLines(res.body, signal)) {
     let j: any
     try {
@@ -349,16 +373,23 @@ async function streamGemini(p: ApiProfile, key: string | null, requestId: string
     } catch {
       continue
     }
+    if (j.error) throw new Error(String(j.error.message ?? JSON.stringify(j.error)))
+    const block = j.promptFeedback?.blockReason
+    if (block) throw new Error(`Gemini 拒绝了这次请求（${GEMINI_BLOCK[block] ?? block}）。这是 Google 在服务端的限制，药汤已经关闭了可以关闭的安全过滤；可以换个说法，或换用其它模型。`)
     const cand = j.candidates?.[0]
     for (const part of cand?.content?.parts ?? []) {
       if (typeof part.text !== 'string') continue
       if (part.thought) emit({ type: 'delta', requestId, reasoning: part.text })
-      else emit({ type: 'delta', requestId, content: part.text })
+      else {
+        if (part.text) wrote = true
+        emit({ type: 'delta', requestId, content: part.text })
+      }
     }
     if (cand?.finishReason) finish = cand.finishReason
-    if (j.usageMetadata) usage = { prompt: j.usageMetadata.promptTokenCount, completion: j.usageMetadata.candidatesTokenCount, reasoning: j.usageMetadata.thoughtsTokenCount }
+    if (j.usageMetadata) usage = { prompt: j.usageMetadata.promptTokenCount, completion: j.usageMetadata.candidatesTokenCount, reasoning: j.usageMetadata.thoughtsTokenCount, cached: j.usageMetadata.cachedContentTokenCount }
   }
-  emit({ type: 'done', requestId, finish, usage, model: p.model })
+  if (!wrote && finish && GEMINI_BLOCK[finish]) throw new Error(`Gemini 中途停止了回复（${GEMINI_BLOCK[finish]}）。可以重写一次，或换个说法。`)
+  emit({ type: 'done', requestId, finish: finish === 'MAX_TOKENS' ? 'length' : finish === 'STOP' ? 'stop' : finish, usage, model: p.model })
 }
 
 /* ───────────────── 对外接口 ───────────────── */
@@ -384,14 +415,21 @@ export function abortStream(requestId: string): void {
   running.get(requestId)?.abort()
 }
 
-export async function listModels(p: ApiProfile, key: string | null): Promise<string[]> {
+export interface ModelInfo {
+  id: string
+  /** 服务商报告的上下文上限（token），不知道则为空 */
+  context?: number
+}
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined)
+
+export async function listModels(p: ApiProfile, key: string | null): Promise<ModelInfo[]> {
   try {
     if (p.provider === 'anthropic') {
       const base = trimBase(p.baseUrl) || 'https://api.anthropic.com'
       const res = await net.fetch((/\/v1$/.test(base) ? base : base + '/v1') + '/models', { headers: { 'anthropic-version': '2023-06-01', ...(key ? { 'x-api-key': key } : {}) } })
       if (!res.ok) throw new Error(await readError(res))
       const j: any = await res.json()
-      return (j.data ?? []).map((m: any) => m.id).filter(Boolean)
+      return (j.data ?? []).filter((m: any) => m?.id).map((m: any) => ({ id: String(m.id), context: num(m.max_input_tokens) }))
     }
     if (p.provider === 'gemini') {
       const base = trimBase(p.baseUrl) || 'https://generativelanguage.googleapis.com'
@@ -399,13 +437,17 @@ export async function listModels(p: ApiProfile, key: string | null): Promise<str
       const res = await net.fetch(`${root}/models`, { headers: key ? { 'x-goog-api-key': key } : {} })
       if (!res.ok) throw new Error(await readError(res))
       const j: any = await res.json()
-      return (j.models ?? []).map((m: any) => String(m.name).replace(/^models\//, '')).filter(Boolean)
+      return (j.models ?? [])
+        .filter((m: any) => m?.name && (!Array.isArray(m.supportedGenerationMethods) || m.supportedGenerationMethods.includes('generateContent')))
+        .map((m: any) => ({ id: String(m.name).replace(/^models\//, ''), context: num(m.inputTokenLimit) }))
     }
     const res = await net.fetch(openaiUrl(p.baseUrl, '/models'), { headers: key ? { Authorization: `Bearer ${key}` } : {} })
     if (!res.ok) throw new Error(await readError(res))
     const j: any = await res.json()
     const arr = Array.isArray(j) ? j : (j.data ?? j.models ?? [])
-    return arr.map((m: any) => (typeof m === 'string' ? m : m.id ?? m.name)).filter(Boolean)
+    return arr
+      .map((m: any) => (typeof m === 'string' ? { id: m } : { id: String(m.id ?? m.name ?? ''), context: num(m.context_length ?? m.context_window ?? m.max_context_length ?? m.top_provider?.context_length) }))
+      .filter((m: ModelInfo) => m.id)
   } catch (e: any) {
     throw new Error(e?.message?.includes('HTTP') ? e.message : friendlyNetError(e))
   }

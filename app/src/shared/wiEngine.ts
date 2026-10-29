@@ -83,6 +83,27 @@ export function matchKey(haystack: string, needle: string, caseSensitive: boolea
   return h.includes(n)
 }
 
+/**
+ * SillyTavern 的条目装饰器：写在内容最前面的 @@activate（总是触发）、@@dont_activate（不按关键词触发）。
+ * 装饰器那几行本身不发给 AI。
+ */
+function applyDecorators<T extends { content: string; constant: boolean }>(e: T): T | null {
+  if (!e.content || !/^\s*@@/.test(e.content)) return e
+  const lines = e.content.split('\n')
+  let i = 0
+  let activate = false
+  let dont = false
+  while (i < lines.length && /^\s*@@[a-z_]+/i.test(lines[i])) {
+    const d = lines[i].trim().toLowerCase()
+    if (d.startsWith('@@activate')) activate = true
+    else if (d.startsWith('@@dont_activate')) dont = true
+    i++
+  }
+  if (dont) return null
+  const content = lines.slice(i).join('\n')
+  return { ...e, content, constant: e.constant || activate }
+}
+
 export function scanWorldInfo(input: WIScanInput): WIScanResult {
   const rnd = input.random ?? Math.random
   const macros = input.macros ?? ((s: string) => s)
@@ -91,7 +112,10 @@ export function scanWorldInfo(input: WIScanInput): WIScanResult {
   const mc = input.messageCount
 
   // 按 order 从高到低（高 order 优先占用预算）
-  const sorted = input.entries.filter((e) => e.enabled && (e.content || '').trim() !== '').sort((a, b) => b.order - a.order || a.uid - b.uid)
+  const sorted = input.entries
+    .map(applyDecorators)
+    .filter((e): e is NonNullable<typeof e> => !!e && e.enabled && (e.content || '').trim() !== '')
+    .sort((a, b) => b.order - a.order || a.uid - b.uid)
 
   const reversed = [...input.chat].reverse() // 最新在前
   const chatText = (depth: number) => reversed.slice(0, Math.max(0, depth)).join('\n\u0001')

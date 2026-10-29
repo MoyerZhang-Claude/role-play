@@ -17,7 +17,8 @@ export interface ParsedCard {
   image?: Uint8Array
 }
 
-const str = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v))
+/** 文本字段：统一换行为 LF（卡片里常混有 Windows 的 CRLF，会让作者的正则匹配不上） */
+const str = (v: unknown) => (typeof v === 'string' ? v.replace(/\r\n?/g, '\n') : v == null ? '' : String(v).replace(/\r\n?/g, '\n'))
 
 /** 从文件字节解析角色卡；不是角色卡时返回 null */
 export function parseCardFile(bytes: Uint8Array, fileName: string): ParsedCard | { error: string } | null {

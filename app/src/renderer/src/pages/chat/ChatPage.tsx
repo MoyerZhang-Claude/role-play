@@ -14,9 +14,16 @@ import { Icon } from '../../icons/Icon'
 import { MessageItem, openLink } from './MessageItem'
 import { Composer, type ComposerHandle } from './Composer'
 import { relTime } from '../../lib/api'
+import { useGroups, membersOf } from '../../state/groups'
+import { GroupBar, GroupSeal } from '../Groups'
+import type { Character } from '@shared/types'
 
 export function ChatPage({ characterId, chatId }: { characterId: string; chatId: string }) {
-  const ch = useLibrary((s) => s.chars.find((c) => c.id === characterId))
+  const chars = useLibrary((s) => s.chars)
+  const group = useGroups((s) => s.groups.find((g) => g.id === characterId))
+  const members = useMemo(() => (group ? membersOf(group, chars) : []), [group, chars])
+  // 群聊时没有「这一位角色」：用第一位成员撑起页面，每条回复再换成真正的说话人
+  const ch = group ? members[0] : chars.find((c) => c.id === characterId)
   const chat = useChats((s) => (s.active?.id === chatId ? s.active : null))
   const gen = useChats((s) => s.gen)
   const settings = useSettings((s) => s.s)
@@ -48,6 +55,19 @@ export function ChatPage({ characterId, chatId }: { characterId: string; chatId:
     return (s: string) => substituteMacros(s, ctx)
     // 宏只依赖人设名与角色名，不随每条消息变化
   }, [ch?.id, ch?.name, ch?.updatedAt, chat?.id, userName, settings.chat.persona.description])
+  // 群聊：每位成员各自的宏（{{char}} 是说话的那位）
+  const speakerMacros = useMemo(() => {
+    const out = new Map<string, (s: string) => string>()
+    if (!group || !chat) return out
+    const names = members.map((m) => m.name).join(', ')
+    for (const m of members) {
+      const ctx = { ...makeMacroContext(m, chat, settings.chat, null, chat.messages, settings.globalVars), group: names }
+      out.set(m.id, (s: string) => substituteMacros(s, ctx))
+    }
+    return out
+  }, [group?.id, members, chat?.id, userName, settings.chat.persona.description])
+  // 群聊里你说的话只走预设的正则，不套某位成员的
+  const neutral = useMemo<Character | undefined>(() => (group && ch ? { ...ch, regexScripts: [], display: { ...ch.display, styleMode: 'yaotang' } } : undefined), [group?.id, ch])
 
   // 自动滚动：用户在底部附近时跟随
   const onScroll = () => {
@@ -87,9 +107,14 @@ export function ChatPage({ characterId, chatId }: { characterId: string; chatId:
 
   const openInspector = useCallback(async () => {
     const st = useChats.getState()
-    const b = st.lastBuild && st.lastBuild.at > (chat?.updatedAt ?? 0) - 60000 ? st.lastBuild : await st.preview()
+    const b = st.lastBuild && st.lastBuild.chatId === chat?.id && st.lastBuild.at > (chat?.updatedAt ?? 0) - 60000 ? st.lastBuild : await st.preview()
     if (b) setInspect(b)
-  }, [chat?.updatedAt])
+  }, [chat?.updatedAt, chat?.id])
+  useEffect(() => {
+    const h = () => void openInspector()
+    window.addEventListener('yt:open-inspector', h)
+    return () => window.removeEventListener('yt:open-inspector', h)
+  }, [openInspector])
 
   if (!ch || missing) {
     return (
@@ -109,6 +134,12 @@ export function ChatPage({ characterId, chatId }: { characterId: string; chatId:
 
   const busy = !!gen && gen.chatId === chat.id
   const avatar = avatarSrc(ch)
+  const speakingId = busy ? chat.messages.find((m) => m.id === gen!.messageId)?.speakerId : undefined
+  const who = (m: (typeof chat.messages)[number]): Character => {
+    if (!group) return ch
+    if (m.role === 'user') return neutral ?? ch
+    return members.find((x) => x.id === m.speakerId) ?? chars.find((x) => x.id === m.speakerId) ?? ch
+  }
   const msgs = chat.messages
   const last = msgs[msgs.length - 1]
   const canRetry = !!last && last.role === 'user'
@@ -116,20 +147,29 @@ export function ChatPage({ characterId, chatId }: { characterId: string; chatId:
   return (
     <div className="chat">
       <header className="chat-head">
-        <IconButton icon="back" tip="回到角色页" sfx="back" onClick={() => go({ name: 'character', id: ch.id })} />
-        <Medallion src={avatar} name={ch.name} size={34} />
+        {group ? (
+          <>
+            <IconButton icon="back" tip="回到群聊页" sfx="back" onClick={() => go({ name: 'group', id: group.id })} />
+            <GroupSeal group={group} size={30} />
+          </>
+        ) : (
+          <>
+            <IconButton icon="back" tip="回到角色页" sfx="back" onClick={() => go({ name: 'character', id: ch.id })} />
+            <Medallion src={avatar} name={ch.name} size={34} />
+          </>
+        )}
         <div className="chat-head-text">
-          <span className="chat-head-name">{ch.name}</span>
+          <span className="chat-head-name">{group ? group.name : ch.name}</span>
           <span className="chat-head-title">{chat.title}</span>
         </div>
         <span className="section-spacer" />
-        <IconButton icon="list" tip="卷册（这位角色的所有对话）" active={left} onClick={() => setLeft(!left)} />
+        <IconButton icon="list" tip={group ? '卷册（这个群聊的所有对话）' : '卷册（这位角色的所有对话）'} active={left} onClick={() => setLeft(!left)} />
         <IconButton
           icon="plus"
           tip="开始新的一卷"
           onClick={async () => {
-            const c = await useChats.getState().createChat(ch)
-            go({ name: 'chat', characterId: ch.id, chatId: c.id })
+            const c = group ? await useChats.getState().createGroupChat(group) : await useChats.getState().createChat(ch)
+            go({ name: 'chat', characterId: group ? group.id : ch.id, chatId: c.id })
           }}
         />
         <IconButton icon="eye" tip="查看发给 AI 的提示词" onClick={openInspector} />
@@ -145,20 +185,22 @@ export function ChatPage({ characterId, chatId }: { characterId: string; chatId:
           </div>
           {msgs.length === 0 && (
             <div className="chat-empty t-faint">
-              <p>这一卷还是空白的。{ch.firstMes.trim() ? '' : '这位角色没有开场白，'}写下第一句话吧。</p>
+              <p>{group ? '这一卷还是空白的。写下第一句话，或在下方点名让一位成员先开口。' : `这一卷还是空白的。${ch.firstMes.trim() ? '' : '这位角色没有开场白，'}写下第一句话吧。`}</p>
             </div>
           )}
-          {msgs.map((m, i) => (
+          {msgs.map((m, i) => {
+            const sp = who(m)
+            return (
             <MessageItem
               key={m.id}
               msg={m}
               index={i}
               depth={msgs.length - 1 - i}
               isLast={i === msgs.length - 1}
-              ch={ch}
-              avatar={avatar}
+              ch={sp}
+              avatar={group ? avatarSrc(sp) : avatar}
               userName={userName}
-              macros={macros}
+              macros={group ? (speakerMacros.get(sp.id) ?? macros) : macros}
               quotes={settings.appearance.quoteHighlight}
               smooth={settings.chat.smoothReveal}
               showReasoning={settings.chat.showReasoning}
@@ -166,7 +208,8 @@ export function ChatPage({ characterId, chatId }: { characterId: string; chatId:
               genStartedAt={busy && gen!.messageId === m.id ? gen!.startedAt : 0}
               busy={busy}
             />
-          ))}
+            )
+          })}
           <div className="chat-tail" />
         </div>
       </div>
@@ -177,9 +220,10 @@ export function ChatPage({ characterId, chatId }: { characterId: string; chatId:
         </button>
       )}
 
+      {group && <GroupBar group={group} busy={busy} speakingId={speakingId} />}
       <Composer ref={composer} chatId={chat.id} userName={userName} busy={busy} canRetry={canRetry} canContinue={!!last && last.role === 'assistant' && !!swipeText(last).trim()} />
 
-      <VolumesDrawer open={left} onClose={() => setLeft(false)} characterId={ch.id} currentId={chat.id} />
+      <VolumesDrawer open={left} onClose={() => setLeft(false)} characterId={group ? group.id : ch.id} currentId={chat.id} isGroup={!!group} />
       <NotesDrawer open={right} onClose={() => setRight(false)} />
       <PromptInspector build={inspect} onClose={() => setInspect(null)} />
     </div>
@@ -210,7 +254,7 @@ function Drawer({ open, side, onClose, title, deco, children }: { open: boolean;
   )
 }
 
-function VolumesDrawer({ open, onClose, characterId, currentId }: { open: boolean; onClose: () => void; characterId: string; currentId: string }) {
+function VolumesDrawer({ open, onClose, characterId, currentId, isGroup }: { open: boolean; onClose: () => void; characterId: string; currentId: string; isGroup?: boolean }) {
   const index = useChats((s) => s.index)
   const list = Object.values(index)
     .filter((s) => s.characterId === characterId)
@@ -240,7 +284,7 @@ function VolumesDrawer({ open, onClose, characterId, currentId }: { open: boolea
               onClick={async () => {
                 if (!(await confirmDialog({ title: '删除这一卷对话？', body: c.title, okText: '删除', danger: true }))) return
                 await useChats.getState().deleteChat(characterId, c.id)
-                if (c.id === currentId) go({ name: 'character', id: characterId })
+                if (c.id === currentId) go(isGroup ? { name: 'group', id: characterId } : { name: 'character', id: characterId })
               }}
             />
           </div>
@@ -279,6 +323,7 @@ function NotesDrawer({ open, onClose }: { open: boolean; onClose: () => void }) 
           />
         </div>
       </section>
+      <RecapSection />
       <section className="notes-sec">
         <h4>上一轮触发的世界书</h4>
         {!build ? (
@@ -317,8 +362,9 @@ function PromptInspector({ build, onClose }: { build: BuildResult | null; onClos
     <Modal open={!!build} onClose={onClose} deco="Speculum · 提示词透镜" title="发给 AI 的内容" width={900}>
       {b && (
         <div className="inspector">
+          <BudgetBar b={b} />
           <p className="t-small t-faint">
-            约 {b.tokens.toLocaleString()} tokens（估算）· 发送聊天记录 {b.includedHistory} 条{b.trimmedHistory ? `，较早的 ${b.trimmedHistory} 条因上下文预算未发送` : ''} · 世界书激活 {b.activated.length} 条
+            约 {b.tokens.toLocaleString()} tokens（{b.budget.calibrated ? '已按实际用量校准' : '估算'}）· 发送聊天记录 {b.includedHistory} 条{b.trimmedHistory ? `，较早的 ${b.trimmedHistory} 条因上下文预算未发送` : ''} · 世界书激活 {b.activated.length} 条{b.budgetOverflow ? '（世界书超出预算，优先级低的条目没有发送）' : ''}
           </p>
           {b.blocks.map((blk, i) => (
             <details key={i} className="insp-block" open={i === 0}>
@@ -333,5 +379,73 @@ function PromptInspector({ build, onClose }: { build: BuildResult | null; onClos
         </div>
       )}
     </Modal>
+  )
+}
+
+/** 上下文用量条：固定内容 / 聊天记录 / 回复预留 */
+function BudgetBar({ b }: { b: BuildResult }) {
+  const { context, reserve, fixed, history, over } = b.budget
+  const pct = (n: number) => `${Math.max(0, Math.min(100, (n / context) * 100)).toFixed(1)}%`
+  return (
+    <div className={`budget-bar ${over ? 'over' : ''}`}>
+      <div className="budget-track">
+        <span className="budget-fixed" style={{ width: pct(fixed) }} />
+        <span className="budget-history" style={{ width: pct(history) }} />
+        <span className="budget-reserve" style={{ width: pct(reserve) }} />
+      </div>
+      <div className="budget-legend t-small">
+        <span><i className="budget-fixed" />固定内容 {fixed.toLocaleString()}</span>
+        <span><i className="budget-history" />聊天记录 {history.toLocaleString()}</span>
+        <span><i className="budget-reserve" />回复预留 {reserve.toLocaleString()}</span>
+        <span className="t-faint">上下文 {context.toLocaleString()}</span>
+      </div>
+      {over && <p className="t-small budget-warn">固定内容已经超过可用空间，这次不会发送。</p>}
+    </div>
+  )
+}
+
+/** 侧记：前情提要 */
+function RecapSection() {
+  const chat = useChats((s) => s.active)
+  const busy = useChats((s) => s.recapping === s.active?.id)
+  const auto = useSettings((s) => s.s.chat.autoSummary !== false)
+  const [text, setText] = useState(chat?.summary?.text ?? '')
+  useEffect(() => setText(chat?.summary?.text ?? ''), [chat?.id, chat?.summary?.updatedAt])
+  const sum = chat?.summary
+  return (
+    <section className="notes-sec recap-sec">
+      <h4>
+        前情提要
+        {busy && (
+          <span className="recap-busy t-small">
+            <Spinner size={14} /> 正在整理
+          </span>
+        )}
+      </h4>
+      <p className="t-small t-faint">
+        对话长到上下文放不下时，最早的消息不再发送。{auto ? '药汤会在后台把它们整理成前情提要，代替原文发给 AI，免得前面的剧情被忘掉。' : '自动整理已在「设置 → 对话与人设」关闭，可以手动整理。'}
+        角色设定、世界书与预设不受影响，始终完整发送。
+      </p>
+      {sum ? (
+        <>
+          <div className="recap-meta t-small">
+            概括了最早的 {sum.covered} 条对话{sum.edited ? ' · 已手动修改' : ''} · {relTime(sum.updatedAt)}
+          </div>
+          <TextArea value={text} minRows={6} onChange={(e) => setText(e.target.value)} onBlur={() => text !== sum.text && useChats.getState().setRecap(text)} />
+        </>
+      ) : (
+        <p className="t-small recap-empty">这一卷还没有前情提要。{auto ? '需要时会自动整理。' : ''}</p>
+      )}
+      <div className="notes-row">
+        <Button size="sm" icon="refresh" disabled={busy} onClick={() => useChats.getState().rebuildRecap()}>
+          {sum ? '重新整理' : '现在整理'}
+        </Button>
+        {sum && (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => useChats.getState().clearRecap()}>
+            清除
+          </Button>
+        )}
+      </div>
+    </section>
   )
 }

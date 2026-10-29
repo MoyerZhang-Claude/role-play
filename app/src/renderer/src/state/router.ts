@@ -8,6 +8,9 @@ export type Route =
   | { name: 'chat'; characterId: string; chatId: string }
   | { name: 'settings'; tab?: string }
   | { name: 'books'; id?: string }
+  | { name: 'presets' }
+  | { name: 'recent' }
+  | { name: 'group'; id: string }
 
 interface RouterState {
   route: Route

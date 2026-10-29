@@ -11,6 +11,7 @@ import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import type { RegexScript } from '@shared/types'
 import { applyRegexScripts } from '@shared/regex'
+import { prepareFrontend } from './frontend'
 
 const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false })
 md.disable(['lheading'])
@@ -75,6 +76,11 @@ export interface IsoResult {
   /** 处理后是否带有作者样式；没有的话用药汤风格显示即可 */
   styled: boolean
   html: string
+  /**
+   * 这条消息里的样式表（已改写选择器）。与 SillyTavern 一样，消息里的 <style> 对整卷对话都生效：
+   * 有的卡只在开场白或某一条里写样式，后面的消息只用 class。
+   */
+  css: string[]
 }
 
 const cache = new Map<string, IsoResult>()
@@ -82,13 +88,15 @@ const cache = new Map<string, IsoResult>()
 export function renderIsolated(raw: string, opts: IsoOptions): IsoResult {
   let s = applyRegexScripts(raw ?? '', opts.scripts, { placement: opts.placement, isMarkdown: true, depth: opts.depth, macros: opts.macros })
   s = opts.macros(s)
-  const hit = cache.get(s)
+  const key = s
+  const hit = cache.get(key)
   if (hit) return hit
   s = s.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/, '')
   s = s.replace(/\r\n?/g, '\n')
+  s = prepareFrontend(s)
   if (!STYLED_RE.test(s)) {
-    const r = { styled: false, html: '' }
-    cache.set(s, r)
+    const r = { styled: false, html: '', css: [] }
+    cache.set(key, r)
     return r
   }
   // 样式表原样取出，免得被 Markdown 拆开
@@ -107,8 +115,11 @@ export function renderIsolated(raw: string, opts: IsoOptions): IsoResult {
   html = html.replace(/<p>\s*S(\d+)\s*<\/p>/g, (_m, n: string) => `<style>${styles[Number(n)] ?? ''}</style>`)
   html = html.replace(/S(\d+)/g, (_m, n: string) => `<style>${styles[Number(n)] ?? ''}</style>`)
   const frag = purify.sanitize(html, { ...CFG, RETURN_DOM_FRAGMENT: true }) as unknown as DocumentFragment
+  const css: string[] = []
   frag.querySelectorAll('style').forEach((st) => {
-    st.textContent = scopeCss(st.textContent ?? '')
+    const t = scopeCss(st.textContent ?? '').trim()
+    if (t) css.push(t)
+    st.remove()
   })
   frag.querySelectorAll('[data-yt-blocked]').forEach((el) => {
     const span = document.createElement('span')
@@ -119,9 +130,9 @@ export function renderIsolated(raw: string, opts: IsoOptions): IsoResult {
   })
   const box = document.createElement('div')
   box.appendChild(frag)
-  const r = { styled: true, html: box.innerHTML }
+  const r = { styled: true, html: box.innerHTML, css }
   if (cache.size > 200) cache.delete(cache.keys().next().value!)
-  cache.set(s, r)
+  cache.set(key, r)
   return r
 }
 
@@ -137,7 +148,7 @@ export const ISO_BASE_CSS = `
   overflow-wrap: anywhere;
 }
 .yt-iso p { margin: 0 0 0.62em; }
-.yt-iso > :last-child { margin-bottom: 0; }
+.mes_text > :last-child { margin-bottom: 0; }
 .yt-iso em, .yt-iso i { color: var(--c-iso-em, #b8ae9c); }
 .yt-iso a { color: var(--c-iso-link, #e3b56a); }
 .yt-iso img { max-width: 100%; height: auto; }

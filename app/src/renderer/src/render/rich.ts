@@ -8,6 +8,7 @@ import DOMPurify from 'dompurify'
 import type { RegexScript } from '@shared/types'
 import { applyRegexScripts } from '@shared/regex'
 import { adaptColor } from './color'
+import { prepareFrontend } from './frontend'
 
 const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false })
 md.disable(['lheading'])
@@ -321,6 +322,7 @@ export function renderRich(raw: string, opts: RichOptions): string {
   if (hit !== undefined) return hit
   s = s.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/, '')
   s = s.replace(/\r\n?/g, '\n')
+  s = prepareFrontend(s)
   const ctx: Ctx = { blocks: [], codes: [] }
   s = protectCode(s, ctx)
   let html = renderBody(s, ctx, opts)

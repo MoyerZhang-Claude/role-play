@@ -205,6 +205,8 @@ export interface ChatMessage {
   createdAt: number
   /** 开场白（可在备选开场白之间切换） */
   isGreeting?: boolean
+  /** 群聊里写这一条的角色 */
+  speakerId?: ID
 }
 
 export interface AuthorNote {
@@ -225,11 +227,45 @@ export interface Chat {
   vars: Record<string, string>
   /** 世界书时效状态（sticky / cooldown），键为 `${bookId}:${uid}` */
   wiTimed?: Record<string, { stickyEnd?: number; cooldownEnd?: number }>
+  /**
+   * 前情提要：较早的对话因上下文放不下而不再发送时，用它代替，免得 AI 忘掉前面的剧情。
+   * covered = 概括了最前面多少条消息。
+   */
+  summary?: { text: string; covered: number; updatedAt: number; edited?: boolean }
+  /** 群聊：所属的群（此时 characterId 也等于群 ID） */
+  groupId?: ID
+}
+
+/* ───────────── 群聊 ───────────── */
+
+/** 谁来接话：自然 = 被点名的先说，其余看活跃度；轮流 = 每人按顺序说一次；点名 = 只在你点名时说 */
+export type GroupStrategy = 'natural' | 'list' | 'manual'
+
+export interface Group {
+  id: ID
+  name: string
+  /** 成员（角色 ID），顺序就是「轮流」的顺序 */
+  memberIds: ID[]
+  /** 暂时不让说话的成员 */
+  mutedIds: ID[]
+  strategy: GroupStrategy
+  /** 允许同一位角色连着说两段 */
+  allowSelfReply: boolean
+  /** 群聊场景：不为空时代替每位角色自己的场景 */
+  scenario: string
+  /** 每位成员的活跃度（0–1）；不填用角色卡里的 talkativeness，默认 0.5 */
+  talk: Record<ID, number>
+  description?: string
+  createdAt: number
+  updatedAt: number
+  lastChatAt?: number
 }
 
 export interface ChatSummary {
   id: ID
+  /** 单人对话是角色 ID；群聊是群 ID */
   characterId: ID
+  groupId?: ID
   title: string
   createdAt: number
   updatedAt: number
@@ -259,6 +295,11 @@ export interface ApiProfile {
   thinking: ThinkingMode
   /** 附加请求参数（JSON 文本，合并进请求体） */
   extraBody: string
+  /**
+   * token 估算的校准系数：接口实际报告的提示 token ÷ 药汤的估算。
+   * 不同模型的分词差别很大（同样的中文，DeepSeek 比 Gemini 省得多），按实际用量自动校准。
+   */
+  tokenRatio?: number
 }
 
 /* ───────────── 提示词预设（SillyTavern 对话补全预设） ───────────── */
@@ -287,6 +328,8 @@ export interface PromptPreset {
   formats?: { wi?: string; scenario?: string; personality?: string }
   continueNudge?: string
   impersonate?: string
+  /** 群聊里提醒「只以某位角色发言」的提示 */
+  groupNudge?: string
   newChat?: string
   newExampleChat?: string
   params?: { temperature?: number; topP?: number; maxTokens?: number; contextSize?: number; presencePenalty?: number; frequencyPenalty?: number }
@@ -335,6 +378,10 @@ export interface Settings {
     useCardSystemPrompt: boolean
     useCardPostHistory: boolean
     wiScanDepth: number
+    /** 较早的对话放不下时，自动整理成前情提要 */
+    autoSummary: boolean
+    /** 前情提要的篇幅上限（字），越长保留的细节越多，也多占一些上下文 */
+    recapLength?: number
     wiBudgetPercent: number
     wiRecursive: boolean
     wiMaxRecursion: number

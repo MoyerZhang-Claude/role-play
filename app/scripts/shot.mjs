@@ -42,8 +42,18 @@ for (const s of steps) {
     if (s.wait) await win.waitForTimeout(s.wait)
     if (s.setKeyFromFile) {
       // 从文件里取出密钥交给应用加密保存（不打印）
-      const raw = fs.readFileSync(s.setKeyFromFile, 'latin1')
-      const key = raw.match(/sk-[A-Za-z0-9]+/)?.[0]
+      // 字符串：取 DeepSeek 的 sk- 密钥；对象 { file, line }：取包含 line 的那一行冒号后面的部分
+      const spec = typeof s.setKeyFromFile === 'string' ? { file: s.setKeyFromFile } : s.setKeyFromFile
+      const buf = fs.readFileSync(spec.file)
+      let text
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(buf)
+      } catch {
+        text = new TextDecoder('gb18030').decode(buf)
+      }
+      const key = spec.line
+        ? (text.split(/\r?\n/).find((l) => l.toLowerCase().includes(spec.line.toLowerCase())) ?? '').split(/[：:]/).slice(1).join(':').trim()
+        : text.match(/sk-[A-Za-z0-9]+/)?.[0]
       const ok = await win.evaluate(async (k) => {
         const id = window.__yt.settings.getState().s.api.activeProfileId
         await window.yt.secrets.set(id, k)

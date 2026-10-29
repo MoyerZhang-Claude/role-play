@@ -9,15 +9,18 @@
 - 导入 PNG / JSON 角色卡（V1 / V2 / V3），编辑角色并导出 PNG 角色卡。
 - 世界书、正则、SillyTavern 对话补全预设；导入报告说明兼容差异。
 - 流式回复、停止、重写、续写、代写、对话分支与多卷管理。
+- 群聊：多位角色同桌对话，按点名与活跃度轮流接话；群聊卡（连同成员角色卡与头像）导入、导出。
+- 长对话自动整理「前情提要」，篇幅可选；续读页集中显示进行中的故事。
 - 提示词预览、世界书触发记录、上下文预算与宏替换。
+- 内置帮助手札：名词解释、能做与不能做的事、常见问题，可搜索。
 - 羊皮纸界面、实时开场动画、程序合成音效与背景音乐。
 - 本地保存角色与聊天，支持 `.yaotang` 存档的导入、导出与备份。
 
 ## 安装与使用
 
-面向 Windows x64。在 [Releases](https://github.com/MoyerZhang-Claude/role-play/releases) 下载 `YaoTang-Setup-0.3.1.exe`，按向导安装。安装包未签名，Windows 可能显示来源提示；发布页提供 SHA-256 校验文件。
+面向 Windows x64。在 [Releases](https://github.com/MoyerZhang-Claude/role-play/releases) 下载 `YaoTang-Setup-0.4.1.exe`，按向导安装。安装包未签名，Windows 可能显示来源提示；发布页提供 SHA-256 校验文件。
 
-首次使用在「设置 → 接口」填写自己的 API 密钥，并自行导入角色卡。预设 DeepSeek 接口，也支持其他 OpenAI 兼容接口。Claude / Gemini 适配代码已实现，但尚未完成真实接口验证。
+首次使用在「设置 → 接口」填写自己的 API 密钥，并自行导入角色卡。预设 DeepSeek 接口，也支持其他 OpenAI 兼容接口与 Gemini（均已用真实接口验证）。Claude 适配代码已实现，但尚未完成真实接口验证。
 
 程序不附带角色卡、世界书、预设素材、聊天记录或 API 密钥。使用模型服务产生的费用由用户自行承担。
 
@@ -56,7 +59,7 @@ npm run dist -- --publish never
 | `app/src/preload` | Electron 主进程与页面通信桥接 |
 | `app/src/shared` | 角色卡、世界书、正则、预设、宏与提示词逻辑 |
 | `app/src/renderer` | React 页面、主题、图形与声音 |
-| `app/tests` | 不依赖私人素材的逻辑测试 |
+| `app/tests` | 逻辑测试；需要私人素材的个别用例在缺少素材时自动跳过 |
 | `app/build` | 程序生成的图标、安装脚本与许可文件 |
 | `docs` | 设计、兼容性及发布说明 |
 

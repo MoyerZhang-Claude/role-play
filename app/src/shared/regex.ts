@@ -53,7 +53,8 @@ export function isBeautify(s: RegexScript): boolean {
 const PLACEMENT_LABEL: Record<number, string> = { 1: '用户输入', 2: 'AI 回复', 3: '快捷命令', 5: '世界书', 6: '思考内容' }
 
 export function describeRegex(s: RegexScript): string {
-  const where = s.placement.map((p) => PLACEMENT_LABEL[p] ?? `未知(${p})`).join('、') || '（未指定作用范围，不会生效）'
+  if (!s.placement.length) return '没有指定作用范围：平时不会生效，只供快速回复等脚本用 /regex 命令调用（药汤不运行脚本）。'
+  const where = s.placement.map((p) => PLACEMENT_LABEL[p] ?? `未知(${p})`).join('、')
   const scope = s.markdownOnly && s.promptOnly ? '同时作用于显示与发送' : s.markdownOnly ? '只改变显示效果，不改动原文' : s.promptOnly ? '只改变发给 AI 的内容，不影响显示' : '直接改写消息原文'
   let depth = ''
   if (s.minDepth != null && s.minDepth > 0) depth += `，只对倒数第 ${s.minDepth + 1} 条及更早的消息生效`
@@ -73,7 +74,8 @@ export interface RegexContext {
 
 export function applyRegexScripts(text: string, scripts: RegexScript[], ctx: RegexContext): string {
   if (!text || !scripts.length) return text
-  let out = text
+  // 卡片里常有 Windows 换行（CRLF），作者的正则按 LF 写；与 SillyTavern 一样先统一成 LF
+  let out = text.includes('\r') ? text.replace(/\r\n?/g, '\n') : text
   for (const s of scripts) {
     if (s.disabled) continue
     const ok = (s.markdownOnly && ctx.isMarkdown) || (s.promptOnly && ctx.isPrompt) || (!s.markdownOnly && !s.promptOnly && !ctx.isMarkdown && !ctx.isPrompt)
@@ -120,6 +122,25 @@ export function runRegexScript(s: RegexScript, input: string, macros?: (s: strin
     })
     return m(withGroups)
   })
+}
+
+/** 原卡（导入时保存的原始数据）里这条正则的开关状态；找不到返回 null */
+export function originalDisabled(r: RegexScript, raw: unknown): boolean | null {
+  const list = (raw as AnyObj | undefined)?.data?.extensions?.regex_scripts
+  if (!Array.isArray(list)) return null
+  const orig = list.find((x: AnyObj) => x?.id === r.id) ?? list.find((x: AnyObj) => x?.scriptName === r.scriptName && x?.findRegex === r.findRegex)
+  return orig ? !!orig.disabled : null
+}
+
+/**
+ * 这条正则是不是药汤为了显示效果自动关掉的（而不是卡片作者本来就关着的）。
+ * 作者常把几种可选样式一起放进卡里，只开其中一种；那些本来关着的不能替作者打开。
+ */
+export function isAutoDisabled(r: RegexScript, raw: unknown): boolean {
+  if (!r.disabled) return false
+  if (r.ytAutoDisabled != null) return r.ytAutoDisabled
+  if (!(r.ytKind === 'beautify' && r.markdownOnly)) return false
+  return originalDisabled(r, raw) === false
 }
 
 /** 判断一个 JSON 是否为正则脚本（单个或数组） */

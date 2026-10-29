@@ -51,7 +51,7 @@ export interface YtApi {
   llm: {
     start(requestId: string, profile: ApiProfile, messages: LLMMessage[]): Promise<boolean>
     abort(requestId: string): Promise<void>
-    models(profile: ApiProfile): Promise<string[]>
+    models(profile: ApiProfile): Promise<{ id: string; context?: number }[]>
     test(profile: ApiProfile): Promise<{ ok: boolean; ms?: number; text?: string; error?: string }>
     onEvent(cb: (e: LLMEvent) => void): () => void
   }

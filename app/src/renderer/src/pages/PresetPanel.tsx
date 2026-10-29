@@ -3,7 +3,7 @@ import type { PromptPreset } from '@shared/types'
 import { parsePreset } from '@shared/preset'
 import { BLOCK_LABEL, MARKERS } from '@shared/prompt'
 import { Modal } from '../components/Overlays'
-import { Button, IconButton, Toggle, Select, TextArea } from '../components/ui'
+import { Button, IconButton, Toggle, Select, TextArea, TextField, MagicCircle } from '../components/ui'
 import { Icon } from '../icons/Icon'
 import { ReportList } from './ImportModals'
 import { useSettings } from '../state/settings'
@@ -12,6 +12,7 @@ import { yt } from '../lib/api'
 import { hasEjs, needsScript } from '@shared/presetRuntime'
 import { usePresets } from '../state/presets'
 import { audio } from '../audio/engine'
+import { go } from '../state/router'
 
 async function listPresets(): Promise<PromptPreset[]> {
   const out: PromptPreset[] = []
@@ -61,7 +62,10 @@ function PresetImportModal({ preset, report, onDone }: { preset: PromptPreset; r
         if (p.frequencyPenalty != null) prof.frequencyPenalty = p.frequencyPenalty
       })
     audio.stamp()
-    toast('ok', `预设「${preset.name}」已导入`, activate ? '已启用，之后的回复会按它的顺序组装提示词' : '可在「设置 → 对话与人设」启用')
+    toast('ok', `预设「${preset.name}」已导入`, activate ? '已启用，之后的回复会按它的顺序组装提示词。所有预设都在左侧的「预设」页。' : '在左侧的「预设」页可以启用它。', {
+      label: '查看',
+      run: () => go({ name: 'presets' })
+    })
     finish()
   }
   return (
@@ -92,19 +96,10 @@ function PresetImportModal({ preset, report, onDone }: { preset: PromptPreset; r
   )
 }
 
-/** 设置页里的预设面板 */
-export function PresetPanel() {
-  const activeId = useSettings((s) => s.s.chat.activePresetId)
-  const update = useSettings((s) => s.update)
+/** 预设文件：列表、合并写盘（大预设可能上 MB，编辑时界面立即更新，写盘稍后合并进行） */
+function usePresetFiles() {
   const [presets, setPresets] = useState<PromptPreset[]>([])
-  const [openId, setOpenId] = useState<string | null>(null)
   const reload = () => listPresets().then(setPresets)
-  useEffect(() => {
-    reload()
-  }, [activeId])
-  const cur = presets.find((p) => p.id === activeId) ?? null
-
-  // 大预设可能有上百段、上 MB：界面立即更新，写盘稍后合并进行
   const pending = useRef<PromptPreset | null>(null)
   const timer = useRef(0)
   const flush = () => {
@@ -113,7 +108,10 @@ export function PresetPanel() {
     pending.current = null
     if (p) void yt.fs.writeJSON(`presets/${p.id}.json`, p)
   }
-  useEffect(() => flush, [])
+  useEffect(() => {
+    reload()
+    return flush
+  }, [])
   const save = (p: PromptPreset) => {
     setPresets((ls) => ls.map((x) => (x.id === p.id ? p : x)))
     usePresets.getState().put(p)
@@ -122,32 +120,34 @@ export function PresetPanel() {
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(flush, 500)
   }
-  const pick = async () => {
-    const files = await yt.dialog.openFiles({ title: '导入 SillyTavern 预设', filters: [{ name: '预设 JSON', extensions: ['json'] }], multi: false })
-    if (!files[0]) return
-    try {
-      await importPresetJson(JSON.parse(new TextDecoder().decode(files[0].bytes).replace(/^﻿/, '')), files[0].name)
-      reload()
-    } catch {
-      toast('error', '无法读取这个文件')
-    }
+  const remove = async (p: PromptPreset) => {
+    if (pending.current?.id === p.id) pending.current = null
+    await yt.fs.remove(`presets/${p.id}.json`)
+    setPresets((ls) => ls.filter((x) => x.id !== p.id))
   }
-  const remove = async () => {
-    if (!cur) return
-    if (!(await confirmDialog({ title: `删除预设「${cur.name}」？`, okText: '删除', danger: true }))) return
-    if (pending.current?.id === cur.id) pending.current = null
-    await yt.fs.remove(`presets/${cur.id}.json`)
-    update((d) => (d.chat.activePresetId = null))
-  }
-  const move = (i: number, dir: -1 | 1) => {
-    if (!cur) return
-    const j = i + dir
-    if (j < 0 || j >= cur.order.length) return
-    const order = cur.order.slice()
-    ;[order[i], order[j]] = [order[j], order[i]]
-    save({ ...cur, order })
-  }
+  return { presets, reload, save, remove }
+}
 
+async function pickPresetFile(): Promise<boolean> {
+  const files = await yt.dialog.openFiles({ title: '导入 SillyTavern 预设', filters: [{ name: '预设 JSON', extensions: ['json'] }], multi: false })
+  if (!files[0]) return false
+  try {
+    await importPresetJson(JSON.parse(new TextDecoder().decode(files[0].bytes).replace(/^\uFEFF/, '')), files[0].name)
+    return true
+  } catch {
+    toast('error', '无法读取这个文件')
+    return false
+  }
+}
+
+/** 设置页里的简要入口：选择当前预设，详细编辑在「预设」页 */
+export function PresetPanel() {
+  const activeId = useSettings((s) => s.s.chat.activePresetId)
+  const update = useSettings((s) => s.update)
+  const { presets, reload } = usePresetFiles()
+  useEffect(() => {
+    reload()
+  }, [activeId])
   return (
     <div className="preset-panel">
       <div className="profile-bar">
@@ -157,55 +157,156 @@ export function PresetPanel() {
           options={[{ value: '', label: '药汤内置顺序', hint: '主提示词 → 世界书 → 人设 → 角色 → 示例 → 聊天 → 历史后指令' }, ...presets.map((p) => ({ value: p.id, label: p.name, hint: p.source?.fileName }))]}
           onChange={(v) => update((d) => (d.chat.activePresetId = v || null))}
         />
-        <Button size="sm" icon="upload" onClick={pick}>
-          导入预设
+        <Button size="sm" icon="flask" onClick={() => go({ name: 'presets' })}>
+          管理预设
         </Button>
-        {cur && <IconButton icon="trash" tip="删除这个预设" onClick={remove} />}
       </div>
-      {cur ? (
-        <>
-          <p className="t-small t-faint">按从上到下的顺序发给 AI。「药汤填充」的段落由角色卡、世界书、聊天记录等自动生成；其余段落可以展开修改。{cur.prompts.some((p) => p.identifier === 'main') ? '这个预设自带主提示词，会代替上面的「主提示词」。' : ''}</p>
-          <div className="preset-order">
-            {cur.order.map((o, i) => {
-              const pr = cur.prompts.find((p) => p.identifier === o.identifier)
-              const marker = (MARKERS as readonly string[]).includes(o.identifier) || !!pr?.marker
-              const name = BLOCK_LABEL[o.identifier] ?? pr?.name ?? o.identifier
-              const expanded = openId === o.identifier
-              return (
-                <div key={o.identifier} className={`preset-item ${o.enabled ? '' : 'off'} ${o.identifier === 'chatHistory' ? 'history' : ''}`}>
-                  <div className="preset-row">
-                    <Toggle checked={o.enabled} onChange={(v) => save({ ...cur, order: cur.order.map((x, k) => (k === i ? { ...x, enabled: v } : x)) })} />
-                    <button className="preset-name" data-sfx="soft" disabled={marker} onClick={() => setOpenId(expanded ? null : o.identifier)}>
-                      {name}
-                      {marker ? <span className="badge">药汤填充</span> : pr?.injection === 'depth' ? <span className="badge">深度 {pr.depth}</span> : null}
-                      {pr && pr.role !== 'system' && <span className="badge">{pr.role === 'user' ? '用户' : 'AI'}</span>}
-                      {pr?.triggers?.length ? <span className="badge">仅{pr.triggers.map((t) => TRIGGER_LABEL[t] ?? t).join('、')}</span> : null}
-                      {hasEjs(pr?.content) && (
-                        <span className="badge warn" data-tip="模板代码不执行，发送时去掉，只留普通文字">
-                          EJS
-                        </span>
-                      )}
-                    </button>
-                    <IconButton icon="chevL" tip="上移" className="rot90" onClick={() => move(i, -1)} />
-                    <IconButton icon="chevR" tip="下移" className="rot90" onClick={() => move(i, 1)} />
-                  </div>
-                  {expanded && pr && !marker && (
-                    <TextArea value={pr.content} minRows={4} onChange={(e) => save({ ...cur, prompts: cur.prompts.map((x) => (x.identifier === pr.identifier ? { ...x, content: e.target.value } : x)) })} />
-                  )}
-                </div>
-              )
-            })}
+      <p className="t-small t-faint">导入的 SillyTavern 预设都在左侧书脊的「预设」页：可以切换、调整顺序、开关某段、改写内容、管理预设自带的正则。</p>
+    </div>
+  )
+}
+
+/** 「预设」页：所有导入的 SillyTavern 预设 */
+export function PresetsPage() {
+  const activeId = useSettings((s) => s.s.chat.activePresetId)
+  const update = useSettings((s) => s.update)
+  const { presets, reload, save, remove } = usePresetFiles()
+  const [sel, setSel] = useState<string | null>(activeId)
+  useEffect(() => {
+    if (!sel && presets.length) setSel(activeId ?? presets[0].id)
+  }, [presets])
+  const cur = presets.find((p) => p.id === sel) ?? null
+  const use = (id: string | null) => {
+    update((d) => (d.chat.activePresetId = id))
+    audio.stamp()
+    toast('ok', id ? `已改用预设「${presets.find((p) => p.id === id)?.name ?? ''}」` : '已改用药汤内置顺序')
+  }
+  const del = async () => {
+    if (!cur) return
+    if (!(await confirmDialog({ title: `删除预设「${cur.name}」？`, okText: '删除', danger: true }))) return
+    await remove(cur)
+    if (activeId === cur.id) update((d) => (d.chat.activePresetId = null))
+    setSel(null)
+  }
+  return (
+    <div className="page books">
+      <aside className="books-side">
+        <div className="t-deco">Formulae</div>
+        <div className="set-toc-title t-display">预设</div>
+        <div className="books-actions">
+          <Button size="sm" icon="upload" onClick={async () => (await pickPresetFile()) && reload()}>
+            导入
+          </Button>
+        </div>
+        <div className="books-list">
+          <button className={`books-item ${!activeId && !cur ? 'on' : ''}`} data-sfx="soft" onClick={() => setSel(null)}>
+            <span className="books-item-name">药汤内置顺序</span>
+            <span className="books-item-meta t-small">{!activeId && <span className="badge gold">使用中</span>}不用预设时的默认组装方式</span>
+          </button>
+          {presets.map((p) => (
+            <button key={p.id} className={`books-item ${p.id === sel ? 'on' : ''}`} data-sfx="soft" onClick={() => setSel(p.id)}>
+              <span className="books-item-name">{p.name}</span>
+              <span className="books-item-meta t-small">
+                {p.id === activeId && <span className="badge gold">使用中</span>}
+                {p.order.filter((o) => o.enabled).length} / {p.order.length} 段{p.regexScripts?.length ? ` · ${p.regexScripts.length} 条正则` : ''}
+              </span>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <section className="books-main">
+        {!cur ? (
+          <div className="home-empty">
+            <MagicCircle size={150} strokeWidth={0.8} />
+            <div className="home-empty-text">
+              <p className="t-display">提示词预设</p>
+              <p className="t-soft">预设决定发给 AI 的内容按什么顺序、带哪些额外要求。不用预设时，药汤按 SillyTavern 的默认顺序组装。</p>
+              <p className="t-faint t-small">可以导入 SillyTavern 的「对话补全预设」JSON，也可以直接拖进窗口。{activeId ? '' : '现在用的是药汤内置顺序。'}</p>
+              {activeId && (
+                <Button size="sm" onClick={() => use(null)}>
+                  改用药汤内置顺序
+                </Button>
+              )}
+            </div>
           </div>
-          {cur.regexScripts?.length ? <PresetRegex preset={cur} onChange={save} /> : null}
-          {cur.source?.ignored?.length ? (
-            <p className="t-small t-faint">
-              <Icon name="info" /> 未使用：{cur.source.ignored.join('、')}
-            </p>
-          ) : null}
-        </>
-      ) : (
-        <p className="t-small t-faint">没有启用预设时，药汤按 SillyTavern 的默认顺序组装提示词。可以导入 SillyTavern 的「对话补全预设」JSON。</p>
-      )}
+        ) : (
+          <div key={cur.id} className="tab-body">
+            <div className="books-head">
+              <TextField label="预设名" value={cur.name} onChange={(e) => save({ ...cur, name: e.target.value })} />
+              <div className="books-head-actions">
+                {cur.id === activeId ? (
+                  <span className="badge gold preset-using">使用中</span>
+                ) : (
+                  <Button size="sm" variant="primary" icon="seal" sfx="none" onClick={() => use(cur.id)}>
+                    使用这个预设
+                  </Button>
+                )}
+                <Button size="sm" variant="danger" icon="trash" onClick={del}>
+                  删除
+                </Button>
+              </div>
+            </div>
+            <PresetEditor preset={cur} onChange={save} />
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+/** 预设内容：顺序、开关、可改写的段落、自带正则 */
+function PresetEditor({ preset: cur, onChange: save }: { preset: PromptPreset; onChange: (p: PromptPreset) => void }) {
+  const [openId, setOpenId] = useState<string | null>(null)
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir
+    if (j < 0 || j >= cur.order.length) return
+    const order = cur.order.slice()
+    ;[order[i], order[j]] = [order[j], order[i]]
+    save({ ...cur, order })
+  }
+  return (
+    <div className="preset-panel">
+      <p className="t-small t-faint">
+        按从上到下的顺序发给 AI。「药汤填充」的段落由角色卡、世界书、聊天记录等自动生成；其余段落可以展开修改。
+        {cur.source?.fileName ? ` 来自 ${cur.source.fileName}。` : ''}
+      </p>
+      <div className="preset-order">
+        {cur.order.map((o, i) => {
+          const pr = cur.prompts.find((p) => p.identifier === o.identifier)
+          const marker = (MARKERS as readonly string[]).includes(o.identifier) || !!pr?.marker
+          const name = BLOCK_LABEL[o.identifier] ?? pr?.name ?? o.identifier
+          const expanded = openId === o.identifier
+          return (
+            <div key={o.identifier} className={`preset-item ${o.enabled ? '' : 'off'} ${o.identifier === 'chatHistory' ? 'history' : ''}`}>
+              <div className="preset-row">
+                <Toggle checked={o.enabled} onChange={(v) => save({ ...cur, order: cur.order.map((x, k) => (k === i ? { ...x, enabled: v } : x)) })} />
+                <button className="preset-name" data-sfx="soft" disabled={marker} onClick={() => setOpenId(expanded ? null : o.identifier)}>
+                  {name}
+                  {marker ? <span className="badge">药汤填充</span> : pr?.injection === 'depth' ? <span className="badge">深度 {pr.depth}</span> : null}
+                  {pr && pr.role !== 'system' && <span className="badge">{pr.role === 'user' ? '用户' : 'AI'}</span>}
+                  {pr?.triggers?.length ? <span className="badge">仅{pr.triggers.map((t) => TRIGGER_LABEL[t] ?? t).join('、')}</span> : null}
+                  {hasEjs(pr?.content) && (
+                    <span className="badge warn" data-tip="模板代码不执行，发送时去掉，只留普通文字">
+                      EJS
+                    </span>
+                  )}
+                </button>
+                <IconButton icon="chevL" tip="上移" className="rot90" onClick={() => move(i, -1)} />
+                <IconButton icon="chevR" tip="下移" className="rot90" onClick={() => move(i, 1)} />
+              </div>
+              {expanded && pr && !marker && (
+                <TextArea value={pr.content} minRows={4} onChange={(e) => save({ ...cur, prompts: cur.prompts.map((x) => (x.identifier === pr.identifier ? { ...x, content: e.target.value } : x)) })} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {cur.regexScripts?.length ? <PresetRegex preset={cur} onChange={save} /> : null}
+      {cur.source?.ignored?.length ? (
+        <p className="t-small t-faint">
+          <Icon name="info" /> 未使用：{cur.source.ignored.join('、')}
+        </p>
+      ) : null}
     </div>
   )
 }

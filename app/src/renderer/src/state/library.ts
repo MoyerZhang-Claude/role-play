@@ -3,6 +3,7 @@ import type { Character, Worldbook } from '@shared/types'
 import { newId } from '@shared/id'
 import { yt, dataUrl } from '../lib/api'
 import { makeSigilAvatar } from '../lib/avatar'
+import { originalDisabled } from '@shared/regex'
 import { useSettings } from './settings'
 
 interface LibraryState {
@@ -64,7 +65,10 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     for (const d of dirs) {
       if (!d.dir) continue
       const ch = await yt.fs.readJSON<Character>(`characters/${d.name}/character.json`)
-      if (ch && ch.id) out.push(ch)
+      if (!ch || !ch.id) continue
+      const fixed = repairCharacter(ch)
+      if (fixed !== ch) await yt.fs.writeJSON(`characters/${d.name}/character.json`, fixed).catch(() => undefined)
+      out.push(fixed)
     }
     out.sort(sortChars)
     set({ chars: out, loaded: true })
@@ -112,6 +116,39 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     await get().save({ ...ch, avatar: 'avatar.png' })
   }
 }))
+
+/**
+ * 修复旧版本存下的数据：
+ * - v0.3.0 切到「卡片原样式」时，会把作者本来关着的备选样式正则也打开，这里关回去；
+ * - 卡片文本里的 Windows 换行统一成 \n。
+ */
+function repairCharacter(ch: Character): Character {
+  let changed = false
+  let scripts = ch.regexScripts
+  let auto = ch.display?.autoEnabled
+  if (auto?.length) {
+    const wrong = new Set(scripts.filter((r) => auto!.includes(r.id) && originalDisabled(r, ch.raw) === true).map((r) => r.id))
+    if (wrong.size) {
+      scripts = scripts.map((r) => (wrong.has(r.id) ? { ...r, disabled: true } : r))
+      auto = auto.filter((id) => !wrong.has(id))
+      changed = true
+    }
+  }
+  const nl = (s: string) => (s.includes('\r') ? s.replace(/\r\n?/g, '\n') : s)
+  const fields = ['description', 'personality', 'scenario', 'firstMes', 'mesExample', 'systemPrompt', 'postHistoryInstructions', 'creatorNotes'] as const
+  const patchText: Partial<Character> = {}
+  for (const f of fields) {
+    const v = ch[f]
+    if (typeof v === 'string' && v.includes('\r')) {
+      ;(patchText as Record<string, string>)[f] = nl(v)
+      changed = true
+    }
+  }
+  const alts = ch.alternateGreetings.some((g) => g.includes('\r')) ? ch.alternateGreetings.map(nl) : ch.alternateGreetings
+  if (alts !== ch.alternateGreetings) changed = true
+  if (!changed) return ch
+  return { ...ch, ...patchText, alternateGreetings: alts, regexScripts: scripts, display: { ...ch.display, autoEnabled: auto } }
+}
 
 /** 读取角色绑定的独立世界书，以及对所有角色生效的全局世界书 */
 export async function loadLinkedBooks(ch: Character): Promise<Worldbook[]> {

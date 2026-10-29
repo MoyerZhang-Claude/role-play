@@ -22,7 +22,7 @@ async function toPng(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer())
 }
 
-async function avatarPng(ch: Character): Promise<Uint8Array> {
+export async function avatarPng(ch: Character): Promise<Uint8Array> {
   const raw = ch.avatar ? await yt.fs.readBytes(`characters/${ch.id}/${ch.avatar}`) : null
   if (raw && isPng(raw)) return raw
   if (raw) {
@@ -36,7 +36,7 @@ async function avatarPng(ch: Character): Promise<Uint8Array> {
 }
 
 /** 把绑定的独立世界书并进卡内世界书（条目重新编号，避免冲突） */
-function mergeBooks(ch: Character, books: Worldbook[]): Character {
+export function mergeBooks(ch: Character, books: Worldbook[]): Character {
   if (!books.length) return ch
   const base: Worldbook = ch.book ? structuredClone(ch.book) : { id: 'merged', name: books[0].name, entries: [] }
   let uid = base.entries.reduce((m, e) => Math.max(m, e.uid), -1) + 1

@@ -55,6 +55,22 @@ export async function importFiles(files: InFile[]) {
       toast('warn', `无法识别：${f.name}`, '目前支持 PNG 角色卡，角色卡 / 世界书 / 正则 / 预设的 JSON 文件，纯文本设定（.txt），以及 .yaotang 存档')
       continue
     }
+    if (lower.endsWith('.json')) {
+      // 群聊卡要在角色卡之前认出来
+      const head = new TextDecoder('utf-8').decode(f.bytes.subarray(0, 400))
+      if (head.includes('yaotang_group_v1')) {
+        try {
+          const j = JSON.parse(new TextDecoder('utf-8').decode(f.bytes).replace(/^﻿/, ''))
+          const { isGroupBundle, importGroupBundle } = await import('./groupImport')
+          if (isGroupBundle(j)) {
+            await importGroupBundle(j, f.name)
+            continue
+          }
+        } catch {
+          /* 交给后面的识别 */
+        }
+      }
+    }
     const card = parseCardFile(f.bytes, f.name)
     if (card && 'error' in card) {
       toast('error', `${f.name}`, card.error)
@@ -86,6 +102,15 @@ export async function importFiles(files: InFile[]) {
     const rx = parseRegexJson(json)
     if (rx) {
       await attachRegex(rx, f.name)
+      continue
+    }
+    const qr = json as { qrList?: unknown[]; name?: string }
+    if (qr && typeof qr === 'object' && Array.isArray(qr.qrList)) {
+      toast(
+        'warn',
+        `「${qr.name || f.name}」是快速回复按钮组`,
+        `里面是 SillyTavern 的斜杠命令脚本（${qr.qrList.length} 个按钮），药汤不运行脚本，所以没有导入。角色卡、世界书、预设不受影响。`
+      )
       continue
     }
     if (looksLikePreset(json)) {
