@@ -1,0 +1,93 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: app
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Audit source files
+        run: node scripts/audit-release.mjs
+      - name: Check types
+        run: npm run typecheck
+      - name: Run public tests
+        run: npm test
+      - name: Build Windows installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist -- --publish never
+      - name: Audit packaged contents
+        run: node scripts/audit-release.mjs --package
+      - name: Create SHA-256 checksums
+        run: |
+          $lines = Get-ChildItem dist -File | Where-Object { $_.Name -match '\.(exe|blockmap)$' } | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $lines | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding utf8NoBOM
+      - name: Save build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: YaoTang-Windows-x64
+          path: |
+            app/dist/*.exe
+            app/dist/*.blockmap
+            app/dist/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish a new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a stable semantic version' }
+          $tag = "v$version"
+          $releasesJson = gh api "repos/$env:GH_REPO/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing releases' }
+          $existing = @($releasesJson | ConvertFrom-Json) | Where-Object tag_name -eq $tag
+          if ($existing) {
+            if ($existing.draft) { throw 'A draft exists for this version; inspect it before continuing' }
+            Write-Host "Release $tag already exists; preserving its assets."
+            exit 0
+          }
+          $notes = @'
+          药汤 Windows x64 开源版。
+
+          下载 YaoTang-Setup-VERSION.exe 安装；SHA256SUMS.txt 用于校验附件。
+          安装包由本仓库源码构建，未进行数字签名。
+          不包含私人素材库、角色卡、聊天记录、运行数据或 API 密钥。
+          首次使用需自行设置模型接口并导入角色卡。
+          功能变化、兼容性限制与使用方法见仓库文档。
+          '@
+          $notes.Replace('VERSION', $version) | Set-Content dist/release-notes.md -Encoding utf8NoBOM
+          $assets = @(Get-ChildItem dist -File | Where-Object { $_.Name -match '\.(exe|blockmap)$' -or $_.Name -eq 'SHA256SUMS.txt' } | ForEach-Object FullName)
+          gh release create $tag @assets --target $env:RELEASE_COMMIT --title "药汤 $tag" --notes-file dist/release-notes.md --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release or asset upload failed' }
+          gh release edit $tag --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish draft release' }

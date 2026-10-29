@@ -1,0 +1,179 @@
+/* ───────── 续读：拖动排序与焚化阵 ───────── */
+.section-hint {
+  font-size: 12px;
+  color: var(--c-ink-faint);
+  opacity: 0.75;
+}
+.recent-card {
+  touch-action: none;
+}
+.recent-card.is-slot {
+  background: transparent;
+  border: 1px dashed var(--c-ink-line);
+  box-shadow: none;
+  transform: none !important;
+}
+.recent-card.is-slot > * {
+  visibility: hidden;
+}
+body.is-dragging-card,
+body.is-dragging-card * {
+  cursor: grabbing !important;
+}
+body.is-dragging-card .recent-card:not(.is-slot):hover {
+  transform: none;
+}
+
+.recent-ghost {
+  position: fixed;
+  z-index: 9200;
+  pointer-events: none;
+  display: block;
+  padding: 0;
+  border-color: var(--c-ink-line);
+  box-shadow:
+    0 22px 46px var(--c-shadow-deep),
+    0 0 0 1px rgba(var(--rgb-gold), 0.35);
+  transform: rotate(var(--tilt)) scale(1.04);
+  transition:
+    transform 180ms var(--ease-out),
+    box-shadow 200ms ease,
+    opacity 200ms ease;
+  will-change: transform;
+  animation: ghost-lift 200ms var(--ease-spring) both;
+}
+@keyframes ghost-lift {
+  from {
+    transform: rotate(0deg) scale(1);
+    box-shadow: 0 6px 22px var(--c-shadow);
+  }
+}
+.recent-ghost.over {
+  transform: rotate(var(--tilt)) scale(0.72);
+  box-shadow:
+    0 0 0 1px rgba(196, 71, 58, 0.6),
+    0 0 26px rgba(255, 140, 70, 0.5);
+}
+.recent-ghost.burn,
+.recent-ghost.return {
+  transition: none;
+  animation: none;
+}
+.recent-ghost-inner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 16px 16px 18px;
+  height: 100%;
+  text-align: left;
+}
+
+/* 焚化阵：拖动时从顶部浮现，位于窗口正中上方 */
+.pyre {
+  position: fixed;
+  z-index: 9100;
+  top: 54px;
+  left: 50%;
+  width: 120px;
+  height: 120px;
+  margin-left: -60px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-26px) scale(0.85);
+  transition:
+    opacity 260ms ease,
+    transform 360ms var(--ease-spring);
+}
+.pyre.show {
+  opacity: 1;
+  transform: none;
+}
+.pyre::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(250, 240, 215, 0.92) 30%, rgba(250, 240, 215, 0.55) 62%, transparent 72%);
+  box-shadow: 0 8px 26px rgba(48, 30, 14, 0.18);
+}
+.pyre-circle {
+  position: absolute;
+  color: var(--c-rubric);
+  opacity: 0.8;
+}
+.pyre-circle .mc-outer {
+  animation-duration: 14s;
+}
+.pyre-circle .mc-inner {
+  animation-duration: 20s;
+}
+.pyre-flame {
+  position: relative;
+  color: var(--c-ink-soft);
+  --icon-accent: #d4553f;
+  transition:
+    transform 260ms var(--ease-spring),
+    filter 260ms ease;
+  animation: flame-flicker 1.2s steps(6) infinite;
+}
+@keyframes flame-flicker {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+  33% {
+    transform: translateY(-1px) scaleY(1.06);
+  }
+  66% {
+    transform: translateY(0) scaleY(0.97);
+  }
+}
+.pyre-label {
+  position: absolute;
+  top: 100%;
+  margin-top: 2px;
+  font-size: 12.5px;
+  letter-spacing: 0.12em;
+  color: var(--c-ink-faint);
+  white-space: nowrap;
+  transition: color 200ms ease;
+}
+.pyre.armed .pyre-circle {
+  opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(255, 120, 60, 0.8));
+}
+.pyre.armed .pyre-circle .mc-outer {
+  animation-duration: 2.4s;
+}
+.pyre.armed .pyre-circle .mc-inner {
+  animation-duration: 3.2s;
+}
+.pyre.armed .pyre-flame {
+  color: var(--c-rubric);
+  filter: drop-shadow(0 0 8px rgba(255, 140, 60, 0.9));
+}
+.pyre.armed .pyre-label {
+  color: var(--c-rubric);
+}
+.pyre.armed {
+  transform: scale(1.12);
+  z-index: 9300;
+}
+.pyre.armed::before,
+.pyre.burning::before {
+  opacity: 0.25;
+}
+.pyre::before {
+  transition: opacity 200ms ease;
+}
+.pyre.burning {
+  opacity: 1;
+  transform: scale(1.18);
+  z-index: 9300;
+}
+.pyre.burning .pyre-flame {
+  filter: drop-shadow(0 0 14px rgba(255, 170, 80, 1)) brightness(1.3);
+}

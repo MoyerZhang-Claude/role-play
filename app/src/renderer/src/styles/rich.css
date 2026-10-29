@@ -1,0 +1,277 @@
+/* 消息正文排版 */
+.rich {
+  font-family: var(--f-chat);
+  font-size: var(--chat-fs);
+  line-height: var(--chat-lh);
+  color: var(--c-ink);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.rich p {
+  margin: 0 0 0.62em;
+}
+.rich > :last-child,
+.rich .yt-tag-body > :last-child,
+.rich .yt-details-body > :last-child,
+.rich .yt-box > :last-child {
+  margin-bottom: 0;
+}
+[data-indent='1'] .rich p {
+  text-indent: 2em;
+}
+.rich em,
+.rich i {
+  font-style: normal;
+  color: var(--c-ink-narr);
+}
+.rich strong,
+.rich b {
+  font-weight: 700;
+  color: var(--c-ink);
+}
+.rich [data-quotes='1'] .yt-dlg,
+[data-quotes='1'] .rich .yt-dlg {
+  color: var(--c-dlg);
+}
+.rich h1,
+.rich h2,
+.rich h3,
+.rich h4 {
+  margin: 0.8em 0 0.4em;
+  font-family: var(--f-body);
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+}
+.rich h1 {
+  font-size: 1.35em;
+}
+.rich h2 {
+  font-size: 1.22em;
+}
+.rich h3 {
+  font-size: 1.1em;
+}
+.rich h4 {
+  font-size: 1em;
+}
+.rich ul,
+.rich ol {
+  margin: 0 0 0.62em;
+  padding-left: 1.6em;
+}
+.rich li {
+  margin: 0.1em 0;
+}
+.rich blockquote {
+  margin: 0.4em 0 0.8em;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 2px solid var(--c-ink-line);
+  color: var(--c-ink-soft);
+}
+.rich hr {
+  border: none;
+  height: 16px;
+  margin: 0.8em 0;
+  background:
+    radial-gradient(circle, var(--c-ink-faint) 1.6px, transparent 2px) center / 16px 16px no-repeat,
+    linear-gradient(90deg, transparent, var(--c-ink-line) 30%, var(--c-ink-line) 70%, transparent) center / 100% 1px no-repeat;
+}
+.rich code {
+  font-family: var(--f-mono);
+  font-size: 0.86em;
+  padding: 0.05em 0.35em;
+  background: var(--c-ink-wash);
+  border-radius: 2px;
+}
+.rich pre,
+.rich .yt-code {
+  margin: 0.4em 0 0.8em;
+  padding: 0.7em 1em;
+  background: rgba(var(--rgb-ink), 0.045);
+  border: 1px solid var(--c-ink-ghost);
+  border-left: 2px solid var(--c-ink-line);
+  white-space: pre-wrap;
+  font-size: 0.93em;
+  line-height: 1.75;
+}
+.rich pre code {
+  font-family: var(--f-chat);
+  font-size: 1em;
+  padding: 0;
+  background: none;
+}
+.rich table {
+  border-collapse: collapse;
+  margin: 0.4em 0 0.8em;
+  font-size: 0.94em;
+}
+.rich th,
+.rich td {
+  border: 1px solid var(--c-ink-ghost);
+  padding: 0.3em 0.7em;
+}
+.rich th {
+  background: var(--c-ink-wash);
+  font-weight: 600;
+}
+.rich a {
+  cursor: pointer;
+}
+
+/* 卡片的自定义标签：药汤风格的状态栏与段落框 */
+.rich .yt-tag {
+  position: relative;
+  margin: 1.1em 0 0.9em;
+  padding: 1.05em 1.1em 0.8em;
+  border: 1px solid var(--c-ink-line);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 236, 0.5), rgba(255, 250, 236, 0.2)),
+    var(--tex-grain-fine);
+  box-shadow: inset 0 0 0 3px rgba(250, 243, 226, 0.5), inset 0 0 0 4px var(--c-ink-ghost);
+}
+.rich .yt-tag-label {
+  position: absolute;
+  top: -0.72em;
+  left: 0.9em;
+  padding: 0 0.55em;
+  font-family: var(--f-deco);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--c-rubric);
+  background: var(--c-paper);
+}
+.rich .yt-tag .yt-tag {
+  margin: 0.9em 0 0.5em;
+  box-shadow: none;
+  background: none;
+}
+.rich .yt-tag .yt-tag .yt-tag-label {
+  background: var(--c-paper-hi);
+}
+.rich .yt-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0;
+  margin: 0.6em 0 0.9em;
+  border-top: 1px solid var(--c-ink-ghost);
+  border-left: 1px solid var(--c-ink-ghost);
+}
+.rich .yt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05em;
+  padding: 0.45em 0.8em 0.5em;
+  border-right: 1px solid var(--c-ink-ghost);
+  border-bottom: 1px solid var(--c-ink-ghost);
+  min-width: 0;
+}
+.rich .yt-fields .yt-field:nth-child(odd) {
+  background: rgba(var(--rgb-ink), 0.022);
+}
+.rich > .yt-field,
+.rich .yt-tag-body > .yt-field {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.8em;
+  border: none;
+  padding: 0.15em 0;
+}
+.rich .yt-field-k {
+  font-family: var(--f-deco);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--c-ink-faint);
+  white-space: nowrap;
+}
+.rich .yt-field-v {
+  font-size: 0.95em;
+  line-height: 1.6;
+}
+.rich .yt-itag {
+  border-bottom: 1px dotted var(--c-ink-line);
+}
+.rich .yt-box {
+  margin: 0.4em 0 0.8em;
+}
+.rich .yt-center {
+  text-align: center;
+}
+.rich .yt-details {
+  margin: 0.8em 0;
+  border: 1px solid var(--c-ink-ghost);
+  background: rgba(var(--rgb-ink), 0.02);
+}
+.rich .yt-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.4em 0.9em;
+  font-size: 0.9em;
+  color: var(--c-ink-soft);
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  transition: background-color 140ms ease;
+}
+.rich .yt-details > summary::-webkit-details-marker {
+  display: none;
+}
+.rich .yt-details > summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border: 4px solid transparent;
+  border-left: 6px solid currentColor;
+  transition: transform 200ms var(--ease-out);
+  margin-right: -2px;
+}
+.rich .yt-details[open] > summary::before {
+  transform: rotate(90deg) translateX(2px);
+}
+.rich .yt-details > summary:hover {
+  background: var(--c-ink-wash);
+}
+.rich .yt-details-body {
+  padding: 0.3em 1em 0.8em;
+  animation: fade-in 260ms ease both;
+}
+.rich .yt-img-blocked {
+  display: inline-block;
+  padding: 0 0.5em;
+  font-size: 0.85em;
+  color: var(--c-ink-faint);
+  border: 1px dashed var(--c-ink-line);
+}
+
+/* 流式书写：新字像墨渗进纸里 */
+.rich .ink-new {
+  animation: ink-char 520ms var(--ease-out) both;
+}
+.rich .ink-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.15em;
+  border-radius: 50%;
+  background: var(--c-ink);
+  vertical-align: middle;
+  animation: caret-pulse 900ms ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(var(--rgb-ink), 0.4);
+}
+@keyframes caret-pulse {
+  0%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+}

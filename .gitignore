@@ -1,0 +1,29 @@
+# Private material and user data (at any depth)
+素材库/
+安装包/
+AI api key.txt
+.env
+.env.*
+!.env.example
+secrets.json
+credentials.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.yaotang
+data/
+data-dev/
+runtime/
+backups/
+shots/
+截图/
+# Dependencies and generated output
+node_modules/
+out/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

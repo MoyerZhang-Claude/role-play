@@ -1,0 +1,287 @@
+/* ───────── 基础 ───────── */
+:root {
+  --ease-out: cubic-bezier(0.16, 0.84, 0.24, 1);
+  --ease-ink: cubic-bezier(0.22, 0.9, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in: cubic-bezier(0.6, 0, 0.84, 0.2);
+  --dur-fast: 120ms;
+  --dur: 220ms;
+  --dur-slow: 420ms;
+  --px: 1.3333px;
+  --chat-fs: 17px;
+  --chat-lh: 1.9;
+  --chat-w: 780px;
+  --f-chat: var(--f-body);
+  --titlebar-h: 40px;
+  --spine-w: 78px;
+  --c-ink-narr: #6a5341;
+  --c-dlg: #5b2416;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--c-ink);
+  font-family: var(--f-ui);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+html {
+  background: #120c08;
+}
+body {
+  background: transparent;
+}
+
+#paper-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  pointer-events: none;
+}
+
+#root {
+  position: relative;
+  height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+a {
+  color: var(--c-verdigris);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+::selection {
+  background: rgba(var(--rgb-rubric), 0.2);
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 1.5px dashed var(--c-gold);
+  outline-offset: 2px;
+}
+
+/* 滚动条：一根细细的墨线 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--c-ink-ghost);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-ink-line);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.selectable,
+.selectable * {
+  user-select: text;
+}
+
+/* ───────── 文字层级 ───────── */
+.t-display {
+  font-family: var(--f-display);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+}
+.t-deco {
+  font-family: var(--f-deco);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-ink-faint);
+}
+.t-pixel {
+  font-family: var(--f-pixel);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.t-faint {
+  color: var(--c-ink-faint);
+}
+.t-soft {
+  color: var(--c-ink-soft);
+}
+.t-rubric {
+  color: var(--c-rubric);
+}
+.t-small {
+  font-size: 13px;
+}
+
+/* ───────── 动画 ───────── */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes page-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+    filter: blur(2px);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+}
+@keyframes ink-char {
+  from {
+    color: rgba(var(--rgb-ink), 0);
+    text-shadow: 0 0 7px rgba(var(--rgb-ink), 0.55);
+  }
+  60% {
+    text-shadow: 0 0 2px rgba(var(--rgb-ink), 0.25);
+  }
+  to {
+    text-shadow: 0 0 0 rgba(var(--rgb-ink), 0);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@keyframes candle {
+  0%,
+  100% {
+    opacity: 0.92;
+  }
+  17% {
+    opacity: 1;
+  }
+  31% {
+    opacity: 0.88;
+  }
+  46% {
+    opacity: 0.97;
+  }
+  63% {
+    opacity: 0.9;
+  }
+  79% {
+    opacity: 1;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes stamp {
+  0% {
+    opacity: 0;
+    transform: scale(1.6) rotate(-8deg);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.94) rotate(-3deg);
+  }
+  75% {
+    transform: scale(1.03) rotate(-4deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(-4deg);
+  }
+}
+
+[data-motion='reduced'] *,
+[data-motion='reduced'] *::before,
+[data-motion='reduced'] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+
+/* 烛光：极轻的明暗呼吸 */
+.candle-light {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 38%, rgba(255, 226, 160, 0.16), transparent 70%),
+    radial-gradient(ellipse 120% 90% at 50% 50%, transparent 55%, rgba(70, 40, 12, 0.12) 100%);
+  mix-blend-mode: soft-light;
+  animation: candle 7.3s steps(60) infinite;
+}
+[data-ambient='0'] .candle-light {
+  animation: none;
+  opacity: 0.9;
+}
